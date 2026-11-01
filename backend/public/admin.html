@@ -168,6 +168,11 @@
         <select id="linkFilterCat" onchange="renderLinks()"><option value="">全部分类</option></select>
         <span id="linkCount" style="font-size:12px;color:var(--muted)"></span>
       </div>
+      <div class="row">
+        <button class="btn ghost" onclick="runHealthcheck(this)">🏥 链接健康检查</button>
+        <span id="hcSummary" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="hcResult" style="display:none;margin-top:8px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px"></div>
       <div class="row" id="batchBar" style="display:none;background:var(--accent-bg,#eef);padding:6px 10px;border-radius:8px">
         <strong style="font-size:12px">已选 <span id="batchCount">0</span> 条：</strong>
         <button class="btn sm" onclick="batchMove()">移动到…</button>
@@ -585,6 +590,19 @@ async function toggleHotFloat() {
   await api('/api/admin/settings', { method: 'PUT', json: { entries: [{ key: 'hotFloat', value: next }] } });
   flash(next === 'on' ? '🔥 常用上浮已开启（按点击频率排序）' : '常用上浮已关闭（恢复手动排序）');
   loadAppearance();
+}
+async function runHealthcheck(btn) {
+  btn.disabled = true; btn.textContent = '🏥 检查中…';
+  $('hcSummary').textContent = '';
+  try {
+    const d = await api('/api/admin/healthcheck', { method: 'POST' });
+    const { total, dead, results } = d;
+    $('hcSummary').textContent = `共 ${total} 条 · ${dead} 条异常`;
+    $('hcResult').style.display = 'block';
+    $('hcResult').innerHTML = results.map(r => `<div style="display:flex;gap:8px;padding:4px 2px;font-size:12px;border-bottom:1px dashed var(--line)"><span style="color:${r.ok ? 'var(--accent)' : '#f87171'};font-weight:700;width:70px">${r.ok ? '✓ ' + r.code : '✗ ' + (r.code || '×')}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title)}</span><span style="color:var(--muted);width:90px;text-align:right">${r.note}</span></div>`).join('');
+    toast(dead ? `检查完成：${dead} 条异常` : `全部 ${total} 条链接健康 ✓`, dead ? 'err' : 'ok');
+  } catch (e2) { toast('健康检查失败：' + e2.message, 'err'); }
+  btn.disabled = false; btn.textContent = '🏥 链接健康检查';
 }
 async function loadInsights() {
   const el = document.getElementById('insBody');

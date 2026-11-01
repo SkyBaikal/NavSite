@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { genSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import crypto from 'node:crypto';
 import { db } from '../database.js';
+import { isSafeExternalUrl } from '../services/ssrf.js';
 
 export const adminRouter = Router();
 // 审计：挂 router 级，requireAdmin 之后的写操作自动落 events_log
@@ -127,6 +128,42 @@ adminRouter.post('/viewers', requireAdmin, (req, res) => {
   }
 });
 // ===== 数据洞察仪表盘 =====
+// ---- 链接健康检查：并发 HEAD/GET 体检可见链接（SSRF 校验 + 8s 超时）----
+adminRouter.post('/healthcheck', requireAdmin, async (_req, res) => {
+  const links = db.prepare('SELECT id, title, url FROM links WHERE is_visible = 1').all() as any[];
+  const CONC = 6;
+  const results: any[] = [];
+  let idx = 0;
+  async function checkOne(l: any) {
+    const base = { id: l.id, title: l.title, url: l.url };
+    let u: URL;
+    try { u = new URL(l.url); } catch { return { ...base, ok: false, code: 0, note: 'URL 无效' }; }
+    if (!/^https?:$/.test(u.protocol)) return { ...base, ok: false, code: 0, note: '协议不支持' };
+    if (!isSafeExternalUrl(l.url)) return { ...base, ok: false, code: 0, note: '内网地址已拦截' };
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      const r = await fetch(l.url, { method: 'GET', redirect: 'follow', signal: ctrl.signal, headers: { 'User-Agent': 'NavSite-HealthCheck/1.0' } });
+      clearTimeout(t);
+      return { ...base, ok: r.status < 400, code: r.status, note: r.status < 400 ? '正常' : 'HTTP ' + r.status };
+    } catch (e: any) {
+      return { ...base, ok: false, code: 0, note: e?.name === 'AbortError' ? '超时(8s)' : '连接失败' };
+    }
+  }
+  async function worker() {
+    while (idx < links.length) {
+      const l = links[idx++];
+      results.push(await checkOne(l));
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONC, links.length) }, worker));
+  results.sort((a, b) => (a.ok === b.ok ? a.id - b.id : a.ok ? 1 : -1));
+  const dead = results.filter(r => !r.ok).length;
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('admin.healthcheck', ?)")
+    .run(JSON.stringify({ total: links.length, dead }));
+  res.json({ code: 'OK', data: { total: results.length, dead, results } });
+});
+
 adminRouter.get('/insights', requireAdmin, (_req, res) => {
   const top = db.prepare(`SELECT l.title, l.url, l.clicks, c.name AS category FROM links l LEFT JOIN categories c ON l.category_id = c.id WHERE l.clicks > 0 ORDER BY l.clicks DESC LIMIT 10`).all();
   const trend = db.prepare(`SELECT date(created_at) AS day, count(*) AS n FROM events_log WHERE type = 'link.click' AND created_at >= datetime('now', '-7 days') GROUP BY date(created_at) ORDER BY day`).all();
