@@ -117,3 +117,11 @@
 10. **🎬 开机 HUD 启动序列** — 每会话一次 0.9s：NAV·SITE 发光 logo+扫描线+SYSTEM READY→淡出（sessionStorage 去重）。
 
 **排障记录**：insights 板块 `d.data` 多层解构+async 缺失双错→`const {...} = d` + async 修复；自动化 notify 与站内 toast 同名 case 冲突（旧 case 先拦截）→改名区分。
+
+
+## 🎨 自由摆放优雅版（v3.2 后续施工，2026-11-01）
+
+- widget layout 条目新增可选 `h`（1-6 行）：editor「宽度」按钮升级为宽度+高度 prompt；renderGrid/editor-grid 应用 `grid-row: span h` + `grid-auto-rows:minmax(52px,auto)` + `grid-auto-flow:row dense`（自动填坑）。
+- 前台同步：`.grid` dense + minmax(90px,auto)；widget :style 支持 h；span 行时加 `align-self:stretch`（关键！grid 默认 align-items:start 会把 span 行卡压缩成内容高）。
+- 坑：SW 缓存导致新 bundle 不生效→unregister+caches.delete+cache-bust 三连。
+- weather h=2 实测 407px 生效后还原（内容少的卡不适合高行，留用户自配）。

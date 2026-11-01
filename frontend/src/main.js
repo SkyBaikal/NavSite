@@ -1354,7 +1354,7 @@ body { background:var(--color-bg) !important; color:var(--color-ink); font-famil
 .space-tabs button { padding:6px 14px; border:1.5px solid var(--color-line); background:var(--color-card); border-radius:99px; cursor:pointer; font-family:inherit; font-size:13px; transition:.15s; }
 .space-tabs button.active { border-color:var(--color-accent); background:var(--color-accent); color:#fff; }
 .grid { display:grid; grid-template-columns:repeat(12, 1fr); grid-auto-flow:row dense; grid-auto-rows:minmax(90px,auto); gap:var(--gap); align-items:start; }
-.widget { min-width:0; }
+.widget { min-width:0; min-height:0; overflow:hidden; }
 .widget { background:var(--color-card); border:1px solid var(--color-line); border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,.04); transition:box-shadow .25s ease, transform .25s ease, border-color .25s ease; }
 .widget:hover { box-shadow:var(--shadow-card); border-color:color-mix(in srgb, var(--color-accent) 35%, var(--color-line)); }
 .clock, .hitokoto { background:transparent; border:none; box-shadow:none; }
