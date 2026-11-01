@@ -353,6 +353,19 @@ adminRouter.post('/spaces', requireAdmin, (req, res) => {
     .run(name, icon, JSON.stringify(layout), norm(theme_json, {}), norm(switch_rule, { mode: 'manual' }));
   res.status(201).json({ code: 'OK', data: { id: r.lastInsertRowid } });
 });
+// ---- 空间分享：开启（生成 code）/ 关闭 ----
+adminRouter.post('/spaces/:id/share', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const sp = db.prepare('SELECT id FROM spaces WHERE id = ?').get(id) as any;
+  if (!sp) return res.status(404).json({ code: 'NOT_FOUND' });
+  const code = crypto.randomBytes(6).toString('base64url');
+  db.prepare('UPDATE spaces SET share_code = ?, share_enabled = 1 WHERE id = ?').run(code, id);
+  res.json({ code: 'OK', data: { shareCode: code } });
+});
+adminRouter.delete('/spaces/:id/share', requireAdmin, (req, res) => {
+  db.prepare('UPDATE spaces SET share_enabled = 0 WHERE id = ?').run(Number(req.params.id));
+  res.json({ code: 'OK' });
+});
 adminRouter.put('/spaces/:id', requireAdmin, (req, res) => {
   const s = db.prepare('SELECT id FROM spaces WHERE id = ?').get(req.params.id);
   if (!s) return res.status(404).json({ code: 'NOT_FOUND' });

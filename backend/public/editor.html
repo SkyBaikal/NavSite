@@ -387,6 +387,7 @@ async function renderSpaces() {
     tr.innerHTML = `<td style="padding:8px 4px">${esc(s.icon)} <b>${esc(s.name)}</b>${s.id === curSpace?.id ? ' <span style="color:var(--blue);font-size:11px">当前</span>' : ''}</td>
       <td>${n}</td>
       <td><button class="btn sm" onclick="pickSpace(${s.id})">编辑布局/主题</button>
+      <button class="btn sm" onclick="toggleShare(${s.id}, '${(s.share_code || '').replace(/'/g, '')}', ${s.share_enabled ? 1 : 0})">${s.share_enabled ? '🔗 关闭分享' : '🔗 开启分享'}</button>
       <button class="btn sm danger" onclick="delSpace(${s.id})">删除</button></td>`;
     t.appendChild(tr);
   }
@@ -397,6 +398,18 @@ async function addSpace() {
   $('spName').value = ''; $('spIcon').value = '';
   await renderSpaces();
   pickSpace(created.id);
+}
+async function toggleShare(id, code, enabled) {
+  if (enabled) {
+    if (!confirm('关闭后分享链接立即失效，确定？')) return;
+    await api(`/api/admin/spaces/${id}/share`, { method: 'DELETE' });
+    flash('分享已关闭');
+  } else {
+    const d = await api(`/api/admin/spaces/${id}/share`, { method: 'POST' });
+    const url = location.origin + '/?share=' + d.shareCode;
+    prompt('分享链接已生成（复制给朋友，无需登录即可只读访问）：', url);
+  }
+  await renderSpaces();
 }
 async function delSpace(id) {
   if (!confirm('删除空间及其全部布局配置？')) return;

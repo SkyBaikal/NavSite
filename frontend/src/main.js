@@ -164,6 +164,7 @@ registry.category = {
       };
       // 拖拽排序（登录态才生效：HttpOnly cookie 读不到，探测 /api/admin/me）
       const isAdmin = ref(false);
+      const readonly = ref(false);
       onMounted(async () => {
         try {
           const r = await fetch('/api/admin/me', { credentials: 'same-origin' });
@@ -738,6 +739,18 @@ registry.todo = {
         todos.value = todos.value.filter(t => t.id !== id);
         await save();
       }
+      const focusId = ref('');
+      async function setFocus(id) {
+        focusId.value = focusId.value === id ? '' : id;
+        localStorage.setItem('navsite.todoFocus', focusId.value);
+      }
+      focusId.value = localStorage.getItem('navsite.todoFocus') || '';
+      bus.on('pomodoroDone', async () => {
+        if (!focusId.value) return;
+        const it = todos.value.find(t => t.id === focusId.value && !t.done);
+        if (it) { it.done = true; await save(); bus.emit('toast', '⭐ 专注项已完成：' + it.text); }
+        focusId.value = ''; localStorage.removeItem('navsite.todoFocus');
+      });
       async function clearDone() {
         todos.value = todos.value.filter(t => !t.done);
         await save();
@@ -745,7 +758,7 @@ registry.todo = {
       const shown = computed(() => filter.value === 'active' ? todos.value.filter(t => !t.done) : filter.value === 'done' ? todos.value.filter(t => t.done) : todos.value);
       const left = computed(() => todos.value.filter(t => !t.done).length);
       onMounted(load);
-      return { todos, draft, filter, shown, left, add, toggle, del, clearDone };
+      return { todos, draft, filter, shown, left, add, toggle, del, clearDone, focusId, setFocus };
     },
     template: `
       <div class="widget todo">
@@ -764,7 +777,8 @@ registry.todo = {
         <div class="td-list" v-else>
           <div v-for="t in shown" :key="t.id" class="td-item" :class="{done: t.done}">
             <span class="td-check" @click="toggle(t.id)">{{ t.done ? '✓' : '' }}</span>
-            <span class="td-text" @click="toggle(t.id)">{{ t.text }}</span>
+            <span class="td-text" @click="toggle(t.id)" :class="{focus: t.id===focusId}">{{ t.text }}</span>
+            <button class="td-star" @click="setFocus(t.id)" :title="t.id===focusId ? '取消专注' : '设为专注项'">{{ t.id===focusId ? '⭐' : '☆' }}</button>
             <button class="td-del" @click="del(t.id)" title="删除">✕</button>
           </div>
         </div>
@@ -808,7 +822,7 @@ registry.pomodoro = {
       function tick() {
         left.value--;
         if (left.value <= 0) {
-          if (mode.value === 'focus') { mode.value = 'rest'; left.value = REST; rounds.value++; bus.emit('toast', '🍅 番茄完成！休息 5 分钟'); SoundFX.ding?.(); saveRounds(); }
+          if (mode.value === 'focus') { mode.value = 'rest'; left.value = REST; rounds.value++; bus.emit('toast', '🍅 番茄完成！休息 5 分钟'); bus.emit('pomodoroDone'); SoundFX.ding?.(); saveRounds(); }
           else { mode.value = 'focus'; left.value = FOCUS; running.value = false; clearInterval(timer); bus.emit('toast', '☀️ 休息结束，开工！'); }
         }
       }
@@ -1161,6 +1175,7 @@ const App = {
     const widgets = ref([]);
     const theme = ref({});
 
+    const readonly = ref(false); // 分享只读模式
     const spaceDir = ref('none'); // 切换方向：left/right/none
     async function loadSpace(sid) {
       const prev = currentSpace.value;
@@ -1189,6 +1204,15 @@ const App = {
 
     onMounted(async () => {
       try {
+        const shareCode = new URLSearchParams(location.search).get('share');
+        if (shareCode) {
+          readonly.value = true;
+          const sd = await api('/api/share/' + encodeURIComponent(shareCode));
+          spaces.value = [sd.space];
+          categories.value = sd.categories;
+          await loadSpace(sd.space.id || 0);
+          return;
+        }
         const [sp, cats] = await Promise.all([api('/api/spaces'), api('/api/categories')]);
         spaces.value = sp;
         categories.value = cats;
@@ -1279,12 +1303,12 @@ const App = {
       return { comp: registry[w.type]?.component, props: { widget: w, category: cat } };
     }
 
-    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, resolveWidget, soundOn, toggleSound, spaceDir, appearance };
+    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly };
   },
   template: `
     <div class="app">
       <header class="topbar">
-        <div class="logo">🧭 NavSite</div>
+        <div class="logo">{{ readonly ? (spaces[0]?.icon || "👁") + " " + (spaces[0]?.name || "") + " · 分享只读" : "🧭 NavSite" }}</div>
         <nav class="space-tabs" v-if="spaces.length > 1">
           <button v-for="s in spaces" :key="s.id" :class="{active: s.id===currentSpace}" @click="loadSpace(s.id)">
             {{ s.icon }} {{ s.name }}
@@ -1297,7 +1321,8 @@ const App = {
         </template>
       </main>
       <div class="loading" v-else>加载中…</div>
-      <footer class="foot">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a></footer>
+      <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a></footer>
+      <footer class="foot" v-else>👁 只读分享页 · 由 NavSite 生成</footer>
       <cmd-palette />
       <toast-tip />
     </div>
@@ -1617,6 +1642,10 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
 .td-item:last-child { border-bottom: none; }
 .td-check { width: 18px; height: 18px; border: 1.5px solid var(--color-line); border-radius: 50%; flex-shrink: 0; cursor: pointer; display: grid; place-items: center; font-size: 11px; color: #fff; transition: all .2s; }
 .td-item.done .td-check { background: var(--color-accent); border-color: var(--color-accent); box-shadow: 0 0 8px rgba(45,212,191,.4); }
+.td-check:hover { border-color: rgba(45,212,191,.7); box-shadow: 0 0 8px rgba(45,212,191,.25); }
+.td-star { border: none; background: transparent; color: var(--color-muted); cursor: pointer; font-size: 13px; padding: 2px; transition: all .2s; }
+.td-star:hover { color: #fbbf24; transform: scale(1.2); }
+.td-text.focus { color: #fbbf24; text-shadow: 0 0 8px rgba(251,191,36,.3); }
 .td-text { flex: 1; font-size: 13px; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-item.done .td-text { text-decoration: line-through; color: var(--color-muted); }
 .td-del { border: none; background: none; color: var(--color-muted); cursor: pointer; opacity: 0; transition: opacity .15s; font-size: 12px; }
@@ -2071,6 +2100,8 @@ html[data-theme="暗夜"] .widget:not(.clock):not(.hitokoto)::before {
 `;
 document.head.appendChild(style);
 
-createApp(App).mount('#app');
+const __app = createApp(App);
+__app.config.errorHandler = (err, inst, info) => { document.title = 'ERR: ' + err.message + ' @ ' + info; console.error('[VueErr]', err, info); };
+__app.mount('#app');
 // 命令面板：teleport 到 body，由主模板内的 <cmd-palette/> 渲染——注册到主 app 即可
 // （CmdPalette 已在 App 模板中使用，需把组件传入主 app 的 components）

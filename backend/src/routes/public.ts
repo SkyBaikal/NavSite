@@ -71,6 +71,16 @@ publicRouter.get('/appearance', (_req, res) => {
   } });
 });
 
+// ---- 只读分享页数据：/api/share/:code ----
+publicRouter.get('/share/:code', (req, res) => {
+  const sp = db.prepare('SELECT id, name, icon, layout_json, theme_json FROM spaces WHERE share_code = ? AND share_enabled = 1').get(String(req.params.code)) as any;
+  if (!sp) return res.status(404).json({ code: 'NOT_FOUND', message: '分享不存在或已关闭' });
+  const cats = db.prepare('SELECT id, name, icon, sort_order FROM categories WHERE is_visible = 1 ORDER BY sort_order').all() as any[];
+  const linkStmt = db.prepare('SELECT id, category_id, title, url, description, icon_url, clicks FROM links WHERE is_visible = 1 AND category_id = ? ORDER BY CASE WHEN (SELECT value FROM settings WHERE key = ?) = ? THEN sort_order ELSE -clicks END, sort_order');
+  for (const c of cats) c.links = linkStmt.all(c.id, 'hotFloat', 'off');
+  res.json({ code: 'OK', data: { space: { id: sp.id, name: sp.name, icon: sp.icon, layout_json: sp.layout_json, theme_json: sp.theme_json }, categories: cats } });
+});
+
 // 分类+链接（前台可见的）
 publicRouter.get('/categories', (_req, res) => {
   const cats = db.prepare('SELECT id, name, icon, sort_order FROM categories WHERE is_visible = 1 ORDER BY sort_order').all() as any[];
