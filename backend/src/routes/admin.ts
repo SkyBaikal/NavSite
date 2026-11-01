@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
+import { genSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import crypto from 'node:crypto';
 import { db } from '../database.js';
 
@@ -95,6 +96,15 @@ adminRouter.post('/login', rateLimit, (req, res) => {
     return res.status(401).json({ code: 'BAD_CREDENTIALS', message: '账号或密码错误' });
   }
   fails.delete(req.ip || 'unknown');
+  // 2FA：admin 启用了 TOTP 则必须带有效验证码（viewer 不强制）
+  if (role === 'admin') {
+    const s = db.prepare("SELECT value FROM settings WHERE key = 'twofa.secret'").get() as any;
+    if (s?.value) {
+      const code = String((req.body || {}).totp || '').trim();
+      if (!code) return res.status(401).json({ code: 'TOTP_REQUIRED', message: '请输入两步验证码' });
+      if (!verifyTotp(s.value, code)) return res.status(401).json({ code: 'TOTP_INVALID', message: '两步验证码错误' });
+    }
+  }
   const token = sign(JSON.stringify({ user: row.username, role, iat: Date.now() }));
   res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${MAX_AGE / 1000}`);
   res.json({ code: 'OK', data: { user: row.username, role } });
@@ -116,6 +126,38 @@ adminRouter.post('/viewers', requireAdmin, (req, res) => {
     throw e;
   }
 });
+// ===== 两步验证（TOTP）=====
+adminRouter.get('/2fa/status', requireAdmin, (_req, res) => {
+  const s = db.prepare("SELECT value FROM settings WHERE key = 'twofa.secret'").get() as any;
+  res.json({ code: 'OK', data: { enabled: !!s?.value } });
+});
+adminRouter.post('/2fa/setup', requireAdmin, (_req, res) => {
+  const secret = genSecret();
+  db.prepare("INSERT INTO settings (key, value) VALUES ('twofa.pending', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(secret);
+  const row = db.prepare('SELECT username FROM admin WHERE id = 1').get() as any;
+  res.json({ code: 'OK', data: { secret, uri: otpauthUri(secret, row?.username || 'admin') } });
+});
+adminRouter.post('/2fa/enable', requireAdmin, (req, res) => {
+  const pending = db.prepare("SELECT value FROM settings WHERE key = 'twofa.pending'").get() as any;
+  if (!pending?.value) return res.status(400).json({ code: 'INVALID', message: '请先生成密钥' });
+  if (!verifyTotp(pending.value, String((req.body || {}).code || ''))) {
+    return res.status(400).json({ code: 'INVALID', message: '验证码错误，请重试' });
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('twofa.secret', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(pending.value);
+  db.prepare("DELETE FROM settings WHERE key = 'twofa.pending'").run();
+  try { db.prepare("INSERT INTO events_log (type, payload_json, created_at) VALUES ('audit.2fa.enable', ?, datetime('now','localtime'))").run(JSON.stringify({ detail: '两步验证已启用' })); } catch {}
+  res.json({ code: 'OK' });
+});
+adminRouter.post('/2fa/disable', requireAdmin, (req, res) => {
+  const s = db.prepare("SELECT value FROM settings WHERE key = 'twofa.secret'").get() as any;
+  if (s?.value && !verifyTotp(s.value, String((req.body || {}).code || ''))) {
+    return res.status(400).json({ code: 'INVALID', message: '验证码错误' });
+  }
+  db.prepare("DELETE FROM settings WHERE key IN ('twofa.secret','twofa.pending')").run();
+  try { db.prepare("INSERT INTO events_log (type, payload_json, created_at) VALUES ('audit.2fa.disable', ?, datetime('now','localtime'))").run(JSON.stringify({ detail: '两步验证已关闭' })); } catch {}
+  res.json({ code: 'OK' });
+});
+
 // ===== 修改管理员密码 =====
 adminRouter.post('/password', requireAdmin, (req, res) => {
   const { oldPassword, newPassword } = req.body || {};

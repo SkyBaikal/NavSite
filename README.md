@@ -80,3 +80,54 @@ docker run -d --name navsite -p 8080:3000 \
 3. 一切皆事件 —— 打卡/切换/时间触发都是事件，新玩法靠订阅组合
 4. 零 CDN —— 所有资源本地化，完全代码可控
 5. data/ 即世界 —— 容器无状态，迁移 = 拷目录
+
+---
+
+## ✨ 功能总览（v3.0）
+
+- **导航**：分类/链接管理、自动抓取图标标题、搜索（站内+多引擎）、点击统计、删除撤销、浏览器书签导入（500 条 <1s）、CSV 导出
+- **14 个内置 Widget**：搜索框/时钟/分类/一言/速记/习惯打卡/RSS/天气/每日一图/倒计时/最近访问/句子收藏/待办/番茄钟 + 第三方 Widget 市场（iframe 沙箱）
+- **外观**：曜石玻璃拟态主题、亮色可切换、每日轮换本地艺术壁纸（零版权）、HUD 科技感层、自定义 CSS 注入、per-widget 背景图与样式、时段副语
+- **管理后台**：玻璃侧边导航、外观遥控、🔑 密码自助修改、🛡️ 两步验证（TOTP）、只读账号、审计日志、自动备份/恢复、事件日志自动轮转
+- **安全**：bcrypt+登录限速+签名 session、CSP 六安全头、SSRF 内网黑名单、SQL 全参数化、XSS esc 全量、红队 18 项实测
+
+## 🔒 HTTPS 部署（Caddy 反代，推荐）
+
+Caddy 自动申请/续期 Let's Encrypt 证书，配置最简单：
+
+1. 准备一个域名（如 nav.example.com）A 记录指向服务器 IP
+2. 安装 Caddy：`sudo apt install caddy`（或官网一键脚本）
+3. 写 `/etc/caddy/Caddyfile`：
+
+```
+nav.example.com {
+    reverse_proxy localhost:3000
+}
+```
+
+4. `sudo systemctl reload caddy` —— 完成。证书自动管理。
+
+### docker-compose 场景
+
+```yaml
+services:
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+  navsite:
+    image: navsite:latest
+    # 不映射 3000 到公网，仅 Caddy 内网可达
+volumes:
+  caddy_data:
+```
+
+Caddyfile 中 `reverse_proxy navsite:3000`（同 compose 网络用服务名）。
+
+### 安全建议
+- 生产环境务必设置 `NAV_SECRET` 环境变量（否则每次重启 session 全失效）
+- 启用两步验证（后台 → 🔑 → 🛡️ 两步验证）
+- 有条件可加 Cloudflare 前置（隐藏源站 IP + DDoS 防护）
+

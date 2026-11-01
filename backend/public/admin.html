@@ -248,6 +248,24 @@
       </div>
     </section>
 
+      <div style="margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)">
+        <h2 style="border-bottom:none;padding-bottom:4px;margin-bottom:8px">🛡️ 两步验证（TOTP）</h2>
+        <div class="row"><span id="faStatus" style="font-size:13px;color:var(--muted)">查询中…</span></div>
+        <div id="faSetup" style="display:none">
+          <div class="row"><input id="faSecret" readonly class="grow" style="font-family:monospace" placeholder="密钥"></div>
+          <div class="row"><input id="faCode" placeholder="输入验证器 App 显示的 6 位码" maxlength="6" class="grow"></div>
+          <div class="row">
+            <button class="btn" onclick="faEnable()">✅ 确认启用</button>
+            <span class="msg grow" id="faMsg"></span>
+          </div>
+        </div>
+        <div id="faDisable" style="display:none">
+          <div class="row"><input id="faOffCode" placeholder="输入当前 6 位码以关闭" maxlength="6" class="grow">
+          <button class="btn danger sm" onclick="faDisable()">关闭两步验证</button></div>
+        </div>
+      </div>
+    </section>
+
     <section id="sec-viewers">
       <h2>👥 只读账号</h2>
       <div class="row">
@@ -320,7 +338,7 @@ async function buildSideNav() {
 }
 async function doLogout() { await api('/api/admin/logout', { method: 'POST' }); showLogin(); }
 function showLogin() { $('loginBox').style.display = 'block'; $('mainBox').style.display = 'none'; }
-function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); }
+function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); }
 
 let cats = [], links = [];
 async function loadAll() {
@@ -580,6 +598,33 @@ async function saveAppearance() {
   showMsg('apMsg', r.code === 'OK' ? '✓ 已保存，刷新前台生效' : (r.message || '失败'), r.code === 'OK');
 }
 
+async function faStatus() {
+  try {
+    const d = await api('/api/admin/2fa/status');
+    const on = d.data?.enabled;
+    document.getElementById('faStatus').textContent = on ? '🟢 已启用（登录需输入验证器 6 位码）' : '⚪ 未启用';
+    document.getElementById('faSetup').style.display = on ? 'none' : 'block';
+    document.getElementById('faDisable').style.display = on ? 'block' : 'none';
+    if (!on && !document.getElementById('faSecret').value) {
+      const s = await api('/api/admin/2fa/setup', { method: 'POST', json: {} });
+      document.getElementById('faSecret').value = s.data.secret;
+      document.getElementById('faSecret').title = s.data.uri;
+    }
+  } catch (e) { document.getElementById('faStatus').textContent = '❌ ' + e.message; }
+}
+async function faEnable() {
+  const msg = document.getElementById('faMsg');
+  try {
+    await api('/api/admin/2fa/enable', { method: 'POST', json: { code: document.getElementById('faCode').value.trim() } });
+    msg.textContent = '✅ 已启用！下次登录需输入验证码'; faStatus();
+  } catch (e) { msg.textContent = '❌ ' + e.message; }
+}
+async function faDisable() {
+  try {
+    await api('/api/admin/2fa/disable', { method: 'POST', json: { code: document.getElementById('faOffCode').value.trim() } });
+    document.getElementById('faOffCode').value = ''; faStatus();
+  } catch (e) { showMsg('faMsg', e.message, false); }
+}
 async function changePass() {
   const o = document.getElementById('pwOld').value, n = document.getElementById('pwNew').value, n2 = document.getElementById('pwNew2').value;
   const msg = document.getElementById('pwMsg');

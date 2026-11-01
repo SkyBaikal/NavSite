@@ -1034,11 +1034,27 @@ const CmdPalette = {
     }
     window.addEventListener('keydown', onKey);
 
+    const fuzzyScore = (label, kw) => {
+      const L = label.toLowerCase();
+      if (L.includes(kw)) return 1000 - L.indexOf(kw);
+      // 子序列匹配：kw 字符依序出现在 label 中即命中，越紧凑分越高
+      let li = 0, gaps = 0, first = -1;
+      for (const ch of kw) {
+        const f = L.indexOf(ch, li);
+        if (f < 0) return -1;
+        if (first < 0) first = f;
+        if (f > li) gaps += f - li;
+        li = f + 1;
+      }
+      return 500 - gaps - first;
+    };
     const shownCmds = computed(() => {
       const kw = q.value.trim().toLowerCase();
       const base = commands.value.filter(c => c.icon !== '🔗');
       const linkCmds = commands.value.filter(c => c.icon === '🔗');
-      const f = kw ? base.filter(c => c.label.toLowerCase().includes(kw)) : base;
+      if (!kw) return [...base, ...linkCmds];
+      const f = base.map(c => [fuzzyScore(c.label, kw), c]).filter(x => x[0] >= 0)
+        .sort((a, b) => b[0] - a[0]).map(x => x[1]);
       return [...f, ...linkCmds];
     });
     return { open, q, idx, commands, shownCmds, inputEl };
@@ -1569,6 +1585,9 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
 
 
 
+
+/* ===== 移动端页脚防撞 ===== */
+@media (max-width: 640px) { footer { padding-right: 64px; } }
 /* ===== 视觉九轮·科技感 HUD ===== */
 /* 1. 全屏科技网格（极淡，与壁纸共存） */
 .app::before {
