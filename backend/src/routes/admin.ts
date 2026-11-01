@@ -40,6 +40,26 @@ function rateLimit(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+// 静态后台页面登录门槛：无效 session → 返回极简跳转页（不泄露后台源码）
+export function requirePageLogin(req: Request, res: Response, next: NextFunction) {
+  const raw = req.headers.cookie || '';
+  const m = raw.match(new RegExp(`${COOKIE}=([^;]+)`));
+  if (m && verify(decodeURIComponent(m[1]))) return next();
+  res.status(401).setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>401 · 请登录</title><style>
+    body{background:#0b0e14;color:#e8eaf0;font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0}
+    .card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:32px 40px;text-align:center;backdrop-filter:blur(18px)}
+    input{display:block;margin:10px auto;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#e8eaf0;width:220px}
+    button{margin-top:6px;padding:10px 28px;border:none;border-radius:8px;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#04211d;font-weight:700;cursor:pointer}
+    #msg{color:#f87171;font-size:12px;min-height:16px;margin-top:8px}
+  </style></head><body><div class="card"><div style="font-size:40px">🔒</div>
+  <p style="margin:8px 0 16px">NavSite 后台登录</p>
+  <form onsubmit="return doL()"><input id="u" placeholder="用户名" autocomplete="username"><input id="p" type="password" placeholder="密码" autocomplete="current-password"><button>登 录</button></form>
+  <div id="msg"></div></div>
+  <script>async function doL(){const m=document.getElementById('msg');m.textContent='';try{const r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});const d=await r.json();if(d.code==='OK'){location.reload();}else{m.textContent=d.message||'登录失败';}}catch(e){m.textContent='网络错误';}return false;}</script>
+  </body></html>`);
+}
+
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const raw = req.headers.cookie || '';
   const m = raw.match(new RegExp(`${COOKIE}=([^;]+)`));

@@ -1,7 +1,7 @@
 import express from 'express';
 import { migrate, db } from './database.js';
 import { publicRouter } from './routes/public.js';
-import { adminRouter, requireAdmin } from './routes/admin.js';
+import { adminRouter, requireAdmin, requirePageLogin } from './routes/admin.js';
 import { faviconRouter } from './services/favicon.js';
 import { metaRouter } from './services/meta.js';
 import { startScheduler } from './services/scheduler.js';
@@ -144,6 +144,8 @@ adminRouter.post('/automation/test', requireAdmin, (req, res) => {
 });
 
 // 后台静态页（Express 托管，零 CDN）
+// 后台静态页登录门槛（无效 session 只见 401 跳转页，不泄露源码）
+app.use('/admin', requirePageLogin);
 app.use('/admin', express.static(path.join(__dirname, '../public')));
 
 // 生产模式：托管前端构建产物
