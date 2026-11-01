@@ -21,10 +21,9 @@ COPY backend/db ./backend/db
 COPY backend/public ./backend/public
 RUN mv node_modules backend/node_modules && mv package.json backend/ && mv pnpm-lock.yaml backend/ 2>/dev/null || true
 COPY --from=build /build/frontend/dist ./frontend/dist
-
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV NAV_DATA_DIR=/app/data
 VOLUME ["/app/data"]
 EXPOSE 3000
-CMD ["npx", "tsx", "backend/src/main.ts"]
+CMD ["./backend/node_modules/.bin/tsx", "backend/src/main.ts"]

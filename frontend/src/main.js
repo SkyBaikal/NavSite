@@ -466,7 +466,11 @@ registry.rss = {
           const d = new Date(s); if (isNaN(d)) return s.slice(0, 10);
           const now = new Date(); const day = 86400_000;
           const diff = Math.floor((now - d) / day);
-          if (diff <= 0) return '今天';
+          if (diff <= 0) {
+            const hrs = Math.floor((now - d) / 3600_000);
+            if (hrs < 1) return Math.max(1, Math.floor((now - d) / 60_000)) + ' 分钟前';
+            return hrs + ' 小时前';
+          }
           if (diff === 1) return '昨天';
           if (diff < 7) return diff + ' 天前';
           return (d.getMonth() + 1) + '月' + d.getDate() + '日';
@@ -1661,7 +1665,7 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
   animation: bootOut .4s ease 0.9s forwards; pointer-events: none;
 }
 #bootScreen .boot-logo {
-  font-size: 30px; font-weight: 800; letter-spacing: .3em; color: #2dd4bf;
+  max-width: 86vw; white-space: nowrap; font-size: 30px; font-weight: 800; letter-spacing: .3em; color: #2dd4bf;
   text-shadow: 0 0 24px rgba(45,212,191,.6);
   animation: bootIn .5s ease both;
   font-family: 'NavSerif', serif;
