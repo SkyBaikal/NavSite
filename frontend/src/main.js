@@ -331,12 +331,46 @@ registry.quicknote = {
           } catch {}
         }
       });
-      return { text, saved, save };
+      // 流转：把以「#todo 」开头的行转待办、「#link 名称|网址」转链接
+      const converting = ref(false);
+      async function convert() {
+        if (converting.value) return;
+        converting.value = true;
+        try {
+          const lines = text.value.split('\n');
+          const remain = [];
+          let todos = 0, links = 0;
+          for (const ln of lines) {
+            const s = ln.trim();
+            const td = s.match(/^#todo\s+(.+)/i);
+            if (td) {
+              window.dispatchEvent(new CustomEvent('quickTodoAdd', { detail: td[1] }));
+              todos++; continue;
+            }
+            const lk = s.match(/^#link\s+(.+?)\s*[|｜]\s*(https?:\/\/\S+)/i);
+            if (lk) {
+              await fetch('/api/quick-link', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: lk[1], url: lk[2] }) }).catch(() => {});
+              links++; continue;
+            }
+            remain.push(ln);
+          }
+          if (todos || links) {
+            text.value = remain.join('\n');
+            saved.value = `已流转：待办×${todos} 链接×${links}`;
+            setTimeout(() => (saved.value = ''), 3000);
+          } else {
+            saved.value = '没有可流转的行（#todo 文本 / #link 名称|网址）';
+            setTimeout(() => (saved.value = ''), 3000);
+          }
+        } finally { converting.value = false; }
+      }
+      return { text, saved, save, convert, converting };
     },
     template: `
       <div class="widget quicknote">
         <textarea v-model="text" @input="save" placeholder="随手记点什么…（自动保存）"></textarea>
         <div class="note-saved">{{ saved }}</div>
+        <button class="note-convert" @click="convert" :disabled="converting" title="把 #todo / #link 行流转到对应 widget">⇄ 流转</button>
       </div>
     `,
   },
@@ -707,6 +741,68 @@ registry.quote = {
 };
 
 
+// -- calendar widget（迷你日历+农历，纯算法零外部依赖）--
+// 农历数据（2020-2060，由 cnlunar 库权威生成；bits: bit(m-1)=1 表示 30 天；CNY 春节公历锚点）
+const LUNAR_TB = {"2020":[2718,4,0],"2021":[1366,0,0],"2022":[2741,0,0],"2023":[2778,2,0],"2024":[1746,0,0],"2025":[1893,6,0],"2026":[1829,0,0],"2027":[1611,0,0],"2028":[1623,5,0],"2029":[3243,0,0],"2030":[1370,0,0],"2031":[1390,3,0],"2032":[2921,0,0],"2033":[3922,11,0],"2034":[2898,0,0],"2035":[2853,0,0],"2036":[3339,6,1],"2037":[2635,0,0],"2038":[1195,0,0],"2039":[699,5,0],"2040":[1453,0,0],"2041":[2922,0,0],"2042":[3498,2,0],"2043":[3474,0,0],"2044":[3749,7,0],"2045":[3365,0,0],"2046":[2645,0,0],"2047":[2637,5,1],"2048":[1206,0,0],"2049":[1461,0,0],"2050":[1746,3,1],"2051":[3785,0,0],"2052":[3986,8,0],"2053":[3730,0,0],"2054":[3366,0,0],"2055":[1302,6,1],"2056":[2647,0,0],"2057":[1366,0,0],"2058":[869,4,1],"2059":[1877,0,0],"2060":[1865,0,0]};
+const CNY = {"2020":"01-25","2021":"02-12","2022":"02-01","2023":"01-22","2024":"02-10","2025":"01-29","2026":"02-17","2027":"02-06","2028":"01-26","2029":"02-13","2030":"02-03","2031":"01-23","2032":"02-11","2033":"01-31","2034":"02-19","2035":"02-08","2036":"01-28","2037":"02-15","2038":"02-04","2039":"01-24","2040":"02-12","2041":"02-01","2042":"01-22","2043":"02-10","2044":"01-30","2045":"02-17","2046":"02-06","2047":"01-26","2048":"02-14","2049":"02-02","2050":"01-23","2051":"02-11","2052":"02-01","2053":"02-19","2054":"02-08","2055":"01-28","2056":"02-15","2057":"02-04","2058":"01-24","2059":"02-12","2060":"02-02","2061":"02-21"};
+const LUNAR_MONTHS = '正二三四五六七八九十冬腊';
+const LUNAR_DAYS = '初一初二初三初四初五初六初七初八初九初十十一十二十三十四十五十六十七十八十九二十廿一廿二廿三廿四廿五廿六廿七廿八廿九三十';
+function solarToLunar(dt) {
+  const y = dt.getFullYear();
+  let ly = y;
+  const cnyOf = yy => new Date(yy + '-' + (CNY[String(yy)] || '02-15') + 'T00:00:00');
+  if (dt < cnyOf(ly)) ly--;
+  const start = cnyOf(ly);
+  let off = Math.floor((Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000);
+  const [bits, leapNum, leapBig] = LUNAR_TB[String(ly)] || [0, 0, 0];
+  const md = m => (bits & (1 << (m - 1))) ? 30 : 29;
+  let m = 1, isLeap = false;
+  for (;;) {
+    if (leapNum && m === leapNum + 1 && !isLeap) {
+      const ld = leapBig ? 30 : 29;
+      if (off < ld) { isLeap = true; m = leapNum; break; }
+      off -= ld;
+    }
+    const dd = md(m);
+    if (off < dd) break;
+    off -= dd;
+    m++;
+  }
+  return { y: ly, m, d: off + 1, leap: isLeap };
+}
+function lunarDayText(d) {
+  const l = solarToLunar(d);
+  return (l.leap ? '闰' : '') + LUNAR_MONTHS[l.m - 1] + '月' + LUNAR_DAYS.substr((l.d - 1) * 2, 2);
+}
+registry.calendar = {
+  label: '迷你日历',
+  component: {
+    props: ['widget'],
+    setup() {
+      const now = new Date();
+      const y = now.getFullYear(), mo = now.getMonth();
+      const first = new Date(y, mo, 1).getDay();
+      const days = new Date(y, mo + 1, 0).getDate();
+      const today = now.getDate();
+      const cells = [];
+      for (let i = 0; i < first; i++) cells.push(null);
+      for (let d = 1; d <= days; d++) cells.push(d);
+      const monthName = `${y} 年 ${mo + 1} 月`;
+      const lunarToday = lunarDayText(now);
+      return { cells, today, monthName, lunarToday, lunarDayText };
+    },
+    template: `
+      <div class="widget minical">
+        <div class="cal-head"><span class="cal-month">{{ monthName }}</span><span class="cal-lunar">{{ lunarToday }}</span></div>
+        <div class="cal-grid">
+          <span v-for="(w, i) in ['日','一','二','三','四','五','六']" :key="'w'+i" class="cal-wd">{{ w }}</span>
+          <span v-for="(c, i) in cells" :key="'c'+i" class="cal-cell" :class="{ today: c === today, empty: !c }">{{ c || '' }}</span>
+        </div>
+      </div>
+    `,
+  },
+};
+
 // -- todo widget（待办清单）--
 registry.todo = {
   label: '待办清单',
@@ -721,6 +817,11 @@ registry.todo = {
         const d = await fetch(`/api/widgets/${wid}/state?key=todos`).then(r => r.json());
         todos.value = d.data || [];
       }
+      // 速记流转：接收 #todo 行
+      window.addEventListener('quickTodoAdd', (e) => {
+        todos.value.push({ text: e.detail, done: false, created: Date.now() });
+        save();
+      });
       async function save() {
         await fetch(`/api/widgets/${wid}/state`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'todos', value: todos.value }) });
       }
@@ -1310,6 +1411,7 @@ const App = {
         reload: () => location.reload(),
         defaultCatId: categories.value[0]?.id,
         egg: (cmd) => handleEasterEgg(cmd),
+        focusMode: false,
       });
       window.__navsite.sound = SoundFX;
       // 外观自定义：后台遥控（CSS/文案/搜索引擎）
@@ -1507,6 +1609,23 @@ body { background:var(--color-bg) !important; color:var(--color-ink); font-famil
 .hitokoto:hover { color:var(--color-accent); }
 /* 速记便签 */
 .quicknote { grid-column:span 12; }
+.minical .cal-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.minical .cal-month { font-weight: 700; letter-spacing: 1px; }
+.minical .cal-lunar { font-size: 12px; color: #2dd4bf; }
+.minical .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px; }
+.minical .cal-wd { color: rgba(232,234,240,.45); font-size: 11px; }
+.minical .cal-cell { padding: 3px 0; border-radius: 6px; color: rgba(232,234,240,.8); }
+.minical .cal-cell.empty { visibility: hidden; }
+.minical .cal-cell.today { background: linear-gradient(135deg, #14b8a6, #0d9488); color: #04211d; font-weight: 800; box-shadow: 0 0 10px rgba(20,184,166,.45); }
+/* 专注模式：隐藏装饰只留核心 */
+body.focus-mode .topbar .clock-sub, body.focus-mode .foot, body.focus-mode .hud-overlay, body.focus-mode .focus-btn { opacity: 0; pointer-events: none; }
+body.focus-mode .topbar, body.focus-mode .foot { transition: opacity .4s; }
+.focus-btn { position: fixed; right: 14px; bottom: 14px; z-index: 60; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #8b93a7; font-size: 15px; cursor: pointer; backdrop-filter: blur(10px); transition: all .25s; }
+.focus-btn:hover { border-color: rgba(45,212,191,.5); color: #2dd4bf; }
+.focus-btn.on { background: rgba(20,184,166,.2); color: #2dd4bf; border-color: rgba(45,212,191,.6); box-shadow: 0 0 12px rgba(20,184,166,.35); }
+.note-convert { margin-top: 6px; padding: 4px 14px; border: 1px solid rgba(45,212,191,.35); border-radius: 8px; background: rgba(45,212,191,.08); color: #2dd4bf; font-size: 12px; cursor: pointer; transition: all .2s; }
+.note-convert:hover { background: rgba(45,212,191,.18); }
+.quicknote { display: flex; flex-direction: column; }
 .quicknote textarea { width:100%; min-height:90px; padding:12px; border:1.5px solid var(--color-line); border-radius:var(--radius); background:var(--color-card); color:var(--color-ink); font-family:inherit; font-size:14px; resize:vertical; }
 .quicknote textarea:focus { outline:none; border-color:var(--color-accent); }
 .note-saved { font-size:11px; color:var(--color-muted); margin-top:4px; min-height:14px; }

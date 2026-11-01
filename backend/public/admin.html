@@ -77,7 +77,8 @@
     section:nth-of-type(7){animation-delay:.21s} section:nth-of-type(8){animation-delay:.24s}
     section:nth-of-type(9){animation-delay:.27s}
     @keyframes secIn { from { opacity:0; transform:translateY(10px); } }
-    .icon-preview { width:16px; height:16px; vertical-align:-3px; border-radius:3px; }
+    .alias-badge { display:inline-block; padding:1px 8px; border-radius:6px; background:rgba(45,212,191,.12); color:#2dd4bf; font-size:11px; border:1px solid rgba(45,212,191,.3); }
+.icon-preview { width:16px; height:16px; vertical-align:-3px; border-radius:3px; }
     ::-webkit-scrollbar { width:8px; }
     ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.14); border-radius:4px; }
     ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.25); }
@@ -182,7 +183,7 @@
         <button class="btn sm ghost" onclick="batchSel.clear();renderLinks()">取消</button>
       </div>
       <div class="msg" id="linkMsg"></div>
-      <table id="linkTable"><thead><tr><th><input type="checkbox" onchange="selectAllLinks(this)"></th><th>图标</th><th>标题</th><th>URL</th><th>分类</th><th>点击</th><th>操作</th></tr></thead><tbody></tbody></table>
+      <table id="linkTable"><thead><tr><th><input type="checkbox" onchange="selectAllLinks(this)"></th><th>图标</th><th>标题</th><th>别名</th><th>URL</th><th>分类</th><th>点击</th><th>操作</th></tr></thead><tbody></tbody></table>
     </section>
 
     <section id="sec-settings">
@@ -425,6 +426,7 @@ function renderLinks() {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><input type="checkbox" class="lk-chk" data-id="${l.id}" ${batchSel.has(l.id) ? 'checked' : ''}></td>
       <td>${l.icon_url ? `<img class="icon-preview" src="${esc(l.icon_url)}" alt="">` : `<img class="icon-preview" src="/api/favicon?host=${encodeURIComponent(hostOf(l.url))}" alt="">`}</td>
+      <td>${l.alias ? `<span class="alias-badge">⚡ ${esc(l.alias)}</span>` : ""}</td>
       <td>${esc(l.title)}</td><td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.url)}</td>
       <td>${esc(catName(l.category_id))}</td><td>${l.clicks}</td>
       <td class="ops"><button class="btn sm ghost" onclick="editLink(${l.id})">编辑</button>

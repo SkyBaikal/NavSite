@@ -71,6 +71,30 @@ publicRouter.get('/appearance', (_req, res) => {
   } });
 });
 
+// ---- 速记流转：快速加链接 ----
+publicRouter.post('/quick-link', (req, res) => {
+  const { title, url, category_id } = req.body || {};
+  const t = String(title || '').trim().slice(0, 100);
+  const u = String(url || '').trim();
+  if (!t || !/^https?:\/\/[\w.-]+/.test(u)) return res.status(400).json({ code: 'INVALID', message: '需要 title 与合法 url' });
+  const cat = Number(category_id) || (db.prepare('SELECT id FROM categories ORDER BY sort_order LIMIT 1').get() as any)?.id;
+  if (!cat) return res.status(400).json({ code: 'NO_CATEGORY' });
+  const max = (db.prepare('SELECT COALESCE(MAX(sort_order),0) m FROM links WHERE category_id = ?').get(cat) as any).m;
+  db.prepare("INSERT INTO links (category_id, title, url, sort_order) VALUES (?, ?, ?, ?)").run(cat, t, u, max + 1);
+  res.json({ code: 'OK' });
+});
+
+// ---- 快捷别名跳转：/a/:name → 302 ----
+publicRouter.get('/alias/:name', (req, res) => {
+  const name = String(req.params.name).toLowerCase();
+  if (!/^[a-z0-9_-]{1,32}$/.test(name)) return res.status(400).json({ code: 'INVALID' });
+  const row = db.prepare('SELECT url FROM links WHERE alias = ? AND is_visible = 1').get(name) as any;
+  if (!row) return res.status(404).json({ code: 'NOT_FOUND', message: '别名不存在' });
+  db.prepare('UPDATE links SET clicks = clicks + 1 WHERE alias = ?').run(name);
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('link.click', ?)").run(JSON.stringify({ linkId: (db.prepare('SELECT id FROM links WHERE alias = ?').get(name) as any)?.id }));
+  res.redirect(302, row.url);
+});
+
 // ---- 只读分享页数据：/api/share/:code ----
 publicRouter.get('/share/:code', (req, res) => {
   const sp = db.prepare('SELECT id, name, icon, layout_json, theme_json FROM spaces WHERE share_code = ? AND share_enabled = 1').get(String(req.params.code)) as any;

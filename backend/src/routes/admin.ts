@@ -315,7 +315,7 @@ adminRouter.put('/links/:id', requireAdmin, (req, res) => {
   db.prepare(`UPDATE links SET category_id = COALESCE(?, category_id), title = COALESCE(?, title), url = COALESCE(?, url),
     description = COALESCE(?, description), icon_url = COALESCE(?, icon_url), sort_order = COALESCE(?, sort_order),
     is_visible = COALESCE(?, is_visible), updated_at = datetime('now') WHERE id = ?`)
-    .run(b.category_id ?? null, b.title ?? null, b.url ?? null, b.description ?? null, b.icon_url ?? null, b.sort_order ?? null, b.is_visible ?? null, req.params.id);
+    .run(b.category_id ?? null, b.title ?? null, b.url ?? null, b.description ?? null, b.icon_url ?? null, b.sort_order ?? null, b.is_visible ?? null, (b.alias ?? null) === null ? null : String(b.alias).trim().toLowerCase() || null, req.params.id);
   res.json({ code: 'OK' });
 });
 adminRouter.delete('/links/:id', requireAdmin, (req, res) => {
