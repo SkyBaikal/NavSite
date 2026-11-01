@@ -1616,7 +1616,7 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
 @keyframes tdIn { from { opacity: 0; transform: translateY(-4px); } }
 .td-item:last-child { border-bottom: none; }
 .td-check { width: 18px; height: 18px; border: 1.5px solid var(--color-line); border-radius: 50%; flex-shrink: 0; cursor: pointer; display: grid; place-items: center; font-size: 11px; color: #fff; transition: all .2s; }
-.td-item.done .td-check { background: var(--color-accent); border-color: var(--color-accent); }
+.td-item.done .td-check { background: var(--color-accent); border-color: var(--color-accent); box-shadow: 0 0 8px rgba(45,212,191,.4); }
 .td-text { flex: 1; font-size: 13px; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-item.done .td-text { text-decoration: line-through; color: var(--color-muted); }
 .td-del { border: none; background: none; color: var(--color-muted); cursor: pointer; opacity: 0; transition: opacity .15s; font-size: 12px; }
