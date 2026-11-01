@@ -33,7 +33,14 @@ cd backend && npx tsx src/main.ts   # 需 Node 22+
 # 前端需先 cd frontend && npx vite build
 ```
 
-### HTTPS（可选）
+### 🔒 公网部署安全基线（已内置）
+
+- `/admin/*` 静态页有服务端登录门槛（`requirePageLogin`）：未登录只见 401 登录卡片（内嵌表单，一次登录直接进后台），后台源码不泄露
+- 所有数据 API `requireAdmin`（未登录 401）
+- 分享页 `?share=code` 是唯一公开内容面，48bit 随机码可随时撤销
+- 上线前务必改掉 compose 里的 `ADMIN_PASS`/`NAV_SECRET` 占位符
+
+### HTTPS（强烈建议公网启用）
 README「🔒 HTTPS 部署」节有 Caddy 两行反代配置；需真实域名 + A 记录。
 
 ## 三、数据迁移 / 备份
