@@ -575,6 +575,28 @@ adminRouter.post('/import/bookmarks', requireAdmin, (req, res) => {
 });
 
 // ---- 导出 ----
+// ---- 配置包商店 v0：内置精选包（一键应用主题到当前空间）----
+const THEME_PACKS = [
+  { id: 'obsidian', name: '曜石·玻璃拟态', icon: '🪨', desc: '深蓝黑底 + teal 霓虹 + 毛玻璃', tokens: { 'color-bg': '#0b0e14', 'color-card': 'rgba(255,255,255,.055)', 'color-ink': '#e8eaf0', 'color-muted': '#8b93a7', 'color-accent': '#2dd4bf', 'color-line': 'rgba(255,255,255,.09)', 'radius': '16px', 'gap': '16px' } },
+  { id: 'paper', name: '纸墨·书卷', icon: '📜', desc: '米白纸感 + 墨色衬线', tokens: { 'color-bg': '#f7f4ee', 'color-card': '#ffffff', 'color-ink': '#1a2332', 'color-muted': '#6b7280', 'color-accent': '#0f766e', 'color-line': '#e2ddd3', 'radius': '12px', 'gap': '16px' } },
+  { id: 'amber', name: '琥珀·暖夜', icon: '🍯', desc: '暖棕底 + 琥珀金强调', tokens: { 'color-bg': '#1c1410', 'color-card': 'rgba(245,158,11,.08)', 'color-ink': '#f5e9d9', 'color-muted': '#a89880', 'color-accent': '#f59e0b', 'color-line': 'rgba(245,158,11,.15)', 'radius': '14px', 'gap': '16px' } },
+  { id: 'aurora', name: '极光·深紫', icon: '🌌', desc: '深紫底 + 粉紫渐变', tokens: { 'color-bg': '#12081f', 'color-card': 'rgba(167,139,250,.07)', 'color-ink': '#ede9fe', 'color-muted': '#9b8ab8', 'color-accent': '#e879f9', 'color-line': 'rgba(232,121,249,.15)', 'radius': '18px', 'gap': '14px' } },
+];
+adminRouter.get('/packs', requireAdmin, (_req, res) => {
+  const cur = db.prepare('SELECT id FROM spaces ORDER BY sort_order LIMIT 1').get() as any;
+  res.json({ code: 'OK', data: THEME_PACKS.map(p => ({ ...p, applied: false, targetSpace: cur?.id })) });
+});
+adminRouter.post('/packs/:id/apply', requireAdmin, (req, res) => {
+  const pack = THEME_PACKS.find(p => p.id === req.params.id);
+  if (!pack) return res.status(404).json({ code: 'NOT_FOUND' });
+  const spaceId = Number(req.body?.spaceId) || (db.prepare('SELECT id FROM spaces ORDER BY sort_order LIMIT 1').get() as any)?.id;
+  const sp = db.prepare('SELECT id FROM spaces WHERE id = ?').get(spaceId) as any;
+  if (!sp) return res.status(404).json({ code: 'NOT_FOUND' });
+  db.prepare('UPDATE spaces SET theme_json = ? WHERE id = ?').run(JSON.stringify(pack.tokens), spaceId);
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('admin.pack.apply', ?)").run(JSON.stringify({ pack: pack.id, spaceId }));
+  res.json({ code: 'OK', data: { pack: pack.id, spaceId } });
+});
+
 adminRouter.get('/export', requireAdmin, (_req, res) => {
   const dump = {
     exported_at: new Date().toISOString(),

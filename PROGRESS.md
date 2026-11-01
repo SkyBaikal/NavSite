@@ -125,3 +125,15 @@
 - 前台同步：`.grid` dense + minmax(90px,auto)；widget :style 支持 h；span 行时加 `align-self:stretch`（关键！grid 默认 align-items:start 会把 span 行卡压缩成内容高）。
 - 坑：SW 缓存导致新 bundle 不生效→unregister+caches.delete+cache-bust 三连。
 - weather h=2 实测 407px 生效后还原（内容少的卡不适合高行，留用户自配）。
+
+
+## 🎁 v3.3 新点子批次一（2026-11-01 深夜）
+
+用户点选 1/4/5/7/8：
+1. **🏥 链接健康检查** — `POST /api/admin/healthcheck`（并发 6/SSRF 校验/8s 超时/事件落账），admin 🔗 板块一键体检+红绿结果面板。E2E：全 5 链接健康 ✓
+4. **⭐ 番茄钟联动待办** — todo 新增 focusId 专注项（☆→⭐），pomodoro focus 完成 emit `pomodoroDone`，todo 监听自动勾掉专注项并 toast。
+5. **🔗 只读分享页** — spaces 加 share_code/share_enabled（003 迁移）；admin `POST/DELETE /spaces/:id/share`；公开 `GET /api/share/:code`（只读布局+分类+链接）；前台 `?share=code` readonly 模式（logo 显示空间名+分享只读、footer 替换、命令面板隐藏）；editor 空间表加开启/关闭分享按钮。
+7. **🧭 3D 罗盘空间切换** — slide 动画升级 perspective(1200px) rotateY ±14deg + scale(.97)。
+8. **🎁 配置包商店 v0** — 内置 4 主题包（曜石/纸墨/琥珀/极光），`GET /api/admin/packs` + `POST /packs/:id/apply`（覆盖当前空间 theme_json+审计），admin 新「🎁 商店」板块+侧导航项。E2E：amber 应用/obsidian 还原 ✓
+额外：**🌊 Live 动态壁纸** — canvas 流体 blob（六色系按日轮换/reduced-motion 跳过/页签隐藏暂停/Ctrl+K 可关省电）。坑：`window.__navsite = {...}` 直接覆盖抹掉 liveWall API → Object.assign 合并。
+**大坑复盘**：App setup 缺 `const readonly = ref(false)` 定义（只加在 category 组件）→ 模板引用 undefined → 渲染抛 length undefined → 整页白屏。二位法（git stash 对照）+ Vue errorHandler（临时写 document.title）定位。教训：**模板新增响应式引用必须确认定义在同组件 setup**。

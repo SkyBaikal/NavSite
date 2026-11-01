@@ -879,7 +879,64 @@ function mountThemeToggle() {
   document.body.appendChild(btn);
 }
 // 模块级直接挂载（onMounted 仅限组件 setup 内）
-// 开机 HUD 启动序列
+// Live 动态壁纸：canvas 流体 blob（沿用曜石六色系；reduced-motion 或手动关则静止）
+  (function liveWall() {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (localStorage.getItem('ns.liveWall') === 'off') return;
+    const c = document.createElement('canvas');
+    c.id = 'liveWall';
+    document.body.prepend(c);
+    const ctx = c.getContext('2d');
+    let W, H;
+    const fit = () => { W = c.width = innerWidth; H = c.height = innerHeight; };
+    fit(); addEventListener('resize', fit);
+    const PALETTES = [
+      [[45,212,191],[139,92,246]],   // 曜石青紫
+      [[124,58,237],[236,72,153]],   // 紫夜
+      [[20,184,166],[59,130,246]],   // 深海
+      [[245,158,11],[239,68,68]],    // 琥珀
+      [[96,165,250],[14,165,233]],   // 极地
+      [[244,114,182],[167,139,250]], // 玫瑰夜
+    ];
+    const pal = PALETTES[Math.floor(Date.now() / 86400_000) % PALETTES.length];
+    const blobs = Array.from({ length: 3 }, (_, i) => ({
+      x: Math.random(), y: Math.random(),
+      r: .35 + Math.random() * .25,
+      dx: (Math.random() - .5) * .0004, dy: (Math.random() - .5) * .0004,
+      col: pal[i % 2],
+    }));
+    let t = 0, running = true;
+    document.addEventListener('visibilitychange', () => { running = !document.hidden; if (running) requestAnimationFrame(draw); });
+    function draw() {
+      if (!running) return;
+      t++;
+      ctx.fillStyle = 'rgba(11,14,20,.08)';
+      ctx.fillRect(0, 0, W, H);
+      for (const b of blobs) {
+        b.x += b.dx; b.y += b.dy;
+        if (b.x < -.2 || b.x > 1.2) b.dx *= -1;
+        if (b.y < -.2 || b.y > 1.2) b.dy *= -1;
+        const g = ctx.createRadialGradient(b.x * W, b.y * H, 0, b.x * W, b.y * H, b.r * Math.min(W, H));
+        g.addColorStop(0, `rgba(${b.col[0]},${b.col[1]},${b.col[2]},${0.10 + 0.04 * Math.sin(t / 90)})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (t % 240 === 0) window.__navsite?.liveWallFrame?.(); // 钩子（外部可暂停）
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+    window.__navsite = window.__navsite || {};
+    window.__navsite.liveWall = {
+      toggle() {
+        const off = c.classList.toggle('off');
+        localStorage.setItem('ns.liveWall', off ? 'off' : 'on');
+        return !off;
+      },
+      get on() { return !c.classList.contains('off'); },
+    };
+  })();
+  // 开机 HUD 启动序列
   (function boot() {
     if (sessionStorage.getItem('ns.booted')) return;
     sessionStorage.setItem('ns.booted', '1');
@@ -1059,6 +1116,7 @@ const CmdPalette = {
       cmds.push({ icon: '🎨', label: '打开主题编辑器', act: () => window.open('/admin/editor.html') });
       cmds.push({ icon: '⚙️', label: '打开管理后台', act: () => window.open('/admin/admin.html') });
       cmds.push({ icon: '≡', label: '切换布局密度（紧凑/舒适）', act: () => document.getElementById('densityToggle')?.click() });
+      cmds.push({ icon: '🌊', label: (window.__navsite?.liveWall?.on ? '关闭' : '开启') + '动态壁纸（省电）', act: () => window.__navsite?.liveWall?.toggle() });
       // 快速添加：add 标题 网址
       const ql = q.value.trim();
       // 彩蛋命令：/matrix /snow /fireworks /clear
@@ -1247,12 +1305,12 @@ const App = {
         }).catch(() => {});
       });
       // 命令面板桥接：暴露切换空间
-      window.__navsite = {
+      window.__navsite = Object.assign(window.__navsite || {}, {
         switchSpace: (id) => { SoundFX.switch(); loadSpace(id); },
         reload: () => location.reload(),
         defaultCatId: categories.value[0]?.id,
         egg: (cmd) => handleEasterEgg(cmd),
-      };
+      });
       window.__navsite.sound = SoundFX;
       // 外观自定义：后台遥控（CSS/文案/搜索引擎）
       try {
@@ -1436,10 +1494,10 @@ body { background:var(--color-bg) !important; color:var(--color-ink); font-famil
 .grid .widget { animation:stagger .4s ease both; }
 @keyframes stagger { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
 /* 空间切换方向动画（:key 重建触发） */
-.grid.space-in-right { animation:slideR .35s cubic-bezier(.2,.7,.3,1); }
-.grid.space-in-left { animation:slideL .35s cubic-bezier(.2,.7,.3,1); }
-@keyframes slideR { from { opacity:0; transform:translateX(28px); } to { opacity:1; transform:none; } }
-@keyframes slideL { from { opacity:0; transform:translateX(-28px); } to { opacity:1; transform:none; } }
+.grid.space-in-right { animation:spinR .45s cubic-bezier(.2,.7,.3,1); }
+.grid.space-in-left { animation:spinL .45s cubic-bezier(.2,.7,.3,1); }
+@keyframes spinR { from { opacity:0; transform:perspective(1200px) rotateY(-14deg) translateX(40px) scale(.97); } to { opacity:1; transform:perspective(1200px) rotateY(0) translateX(0) scale(1); } }
+@keyframes spinL { from { opacity:0; transform:perspective(1200px) rotateY(14deg) translateX(-40px) scale(.97); } to { opacity:1; transform:perspective(1200px) rotateY(0) translateX(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) {
   .grid .widget, .grid.space-in-right, .grid.space-in-left { animation: none !important; }
   .card-peek { animation: none !important; opacity: 1 !important; transform: none !important; }
@@ -1686,6 +1744,11 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
 
 /* ===== 移动端页脚防撞 ===== */
 @media (max-width: 640px) { footer { padding-right: 64px; } }
+
+
+/* ===== Live 动态壁纸（canvas 流体，零资源程序生成）===== */
+#liveWall { position:fixed; inset:0; z-index:-1; opacity:.55; }
+#liveWall.off { display:none; }
 
 /* ===== 开机 HUD 启动序列（每次进入 0.9s，sessionStorage 只放一次/会话太严——改每次刷新都放轻量版） ===== */
 #bootScreen {

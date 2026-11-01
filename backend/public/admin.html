@@ -337,7 +337,7 @@ async function doLogin() {
 async function buildSideNav() {
   const nav = document.createElement('div');
   nav.id = 'sideNav';
-  const items = [['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察']];
+  const items = [['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察'],['sec-packs','🎁 商店']];
   nav.innerHTML = items.map(([id,label]) => { const el = document.getElementById(id); return el ? `<a href="#${id}" data-t="${id}">${label}</a>` : ''; }).join('');
   document.body.appendChild(nav);
   const links = nav.querySelectorAll('a');
@@ -349,7 +349,7 @@ async function buildSideNav() {
 }
 async function doLogout() { await api('/api/admin/logout', { method: 'POST' }); showLogin(); }
 function showLogin() { $('loginBox').style.display = 'block'; $('mainBox').style.display = 'none'; }
-function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); loadHotFloatState(); loadInsights(); }
+function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); loadHotFloatState(); loadInsights(); loadPacks(); }
 
 let cats = [], links = [];
 async function loadAll() {
@@ -603,6 +603,23 @@ async function runHealthcheck(btn) {
     toast(dead ? `检查完成：${dead} 条异常` : `全部 ${total} 条链接健康 ✓`, dead ? 'err' : 'ok');
   } catch (e2) { toast('健康检查失败：' + e2.message, 'err'); }
   btn.disabled = false; btn.textContent = '🏥 链接健康检查';
+}
+async function loadPacks() {
+  try {
+    const packs = await api('/api/admin/packs');
+    $('packList').innerHTML = packs.map(p => `
+      <div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)">
+        <div style="font-size:15px;font-weight:700">${p.icon} ${esc(p.name)}</div>
+        <div style="font-size:12px;color:var(--muted);margin:6px 0 10px">${esc(p.desc)}</div>
+        <button class="btn sm" onclick="applyPack('${p.id}')">一键应用</button>
+      </div>`).join('');
+  } catch (e2) { $('packList').innerHTML = '<span style="color:var(--muted)">加载失败</span>'; }
+}
+async function applyPack(id) {
+  if (!confirm('将覆盖当前空间的主题令牌，确定？')) return;
+  await api(`/api/admin/packs/${id}/apply`, { method: 'POST', json: {} });
+  toast('✓ 主题包已应用，刷新前台查看', 'ok');
+  loadPacks();
 }
 async function loadInsights() {
   const el = document.getElementById('insBody');
