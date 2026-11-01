@@ -1,0 +1,14 @@
+services:
+  navsite:
+    build: .
+    image: navsite:latest
+    container_name: navsite
+    ports:
+      - "8080:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ADMIN_USER=admin
+      - ADMIN_PASS=changeme
+      - NAV_SECRET=please-change-me-to-a-random-string
+    restart: unless-stopped

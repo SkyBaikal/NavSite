@@ -1,0 +1,8 @@
+node_modules/
+data/nav.db*
+data/backups/
+data/icons/
+data/previews/
+frontend/dist/
+*.log
+nohup.out

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f1115">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <title>NavSite</title>
+</head>
+<body>
+  <div id="app"></div>
+  <noscript>
+    <div style="max-width:640px;margin:40px auto;font-family:sans-serif">
+      <h1>NavSite</h1>
+      <p>需要启用 JavaScript 才能完整体验。以下是基础链接列表：</p>
+      <ul id="basic-links"></ul>
+    </div>
+  </noscript>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    }
+  </script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

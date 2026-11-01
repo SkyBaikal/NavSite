@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NavSite · 布局编辑器</title>
+<style>
+:root { --bg:#1a1d23; --card:#23272f; --ink:#e8e6e3; --muted:#8b949e; --accent:#3fb950; --line:#30363d; --danger:#f85149; --blue:#58a6ff; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--ink); }
+.app { max-width:1280px; margin:0 auto; padding:16px; }
+header { display:flex; align-items:center; gap:12px; padding:8px 0 14px; border-bottom:1px solid var(--line); margin-bottom:14px; flex-wrap:wrap; }
+h1 { font-size:16px; margin-right:auto; }
+.btn { padding:6px 14px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); cursor:pointer; font-size:13px; }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn.danger { color:var(--danger); }
+.btn.sm { padding:3px 9px; font-size:12px; }
+.tabs { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+.tabs .btn.active { background:var(--blue); border-color:var(--blue); color:#fff; }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
+.panel h2 { font-size:13px; color:var(--accent); margin-bottom:10px; letter-spacing:1px; }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+input, select { padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); font-size:13px; }
+input[type=color] { padding:2px; width:40px; height:30px; }
+label { font-size:12px; color:var(--muted); }
+/* palette grid */
+.palettes { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+.pal { border:1px solid var(--line); border-radius:8px; padding:10px; cursor:pointer; transition:.15s; }
+.pal:hover, .pal.active { border-color:var(--blue); }
+.pal .swatches { display:flex; gap:4px; margin-bottom:6px; }
+.pal .sw { width:22px; height:22px; border-radius:4px; }
+.pal .name { font-size:12px; }
+/* layout editor */
+.editor-grid { display:grid; grid-template-columns:repeat(12,1fr); gap:8px; min-height:200px; }
+.welement { border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--bg); cursor:grab; position:relative; min-height:52px; }
+.welement:hover { border-color:var(--blue); }
+.welement .wtype { font-size:13px; font-weight:600; }
+.welement .wops { position:absolute; top:6px; right:6px; display:none; gap:4px; }
+.welement:hover .wops { display:flex; }
+.welement .wops button { border:1px solid var(--line); background:var(--card); border-radius:4px; color:var(--ink); cursor:pointer; font-size:11px; padding:2px 6px; }
+.palette-add { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.palette-add .btn { border-style:dashed; }
+.msg { font-size:12px; color:var(--accent); margin-left:8px; }
+.empty-hint { grid-column:1/-1; text-align:center; color:var(--muted); padding:40px 0; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🧭 布局与主题编辑器</h1>
+    <span class="msg" id="msg"></span>
+    <a class="btn" href="/" target="_blank">查看前台 ↗</a>
+  </header>
+
+  <div class="tabs">
+    <button class="btn" id="tabSpace">空间列表</button>
+    <button class="btn" id="tabLayout">布局编辑</button>
+    <button class="btn" id="tabTheme">主题编辑</button>
+    <button class="btn" id="tabRules">联动规则</button>
+  </div>
+
+  <!-- 空间管理 -->
+  <div id="panelSpace" class="panel">
+    <h2>空间（SPACES）</h2>
+    <div class="row">
+      <input id="spIcon" placeholder="🏠" style="width:56px">
+      <input id="spName" placeholder="空间名称（如：工作 / 摸鱼 / 深夜）">
+      <button class="btn primary" onclick="addSpace()">新建空间</button>
+    </div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse" id="spTable"></table>
+  </div>
+
+  <!-- 布局编辑 -->
+  <div id="panelLayout" class="panel" style="display:none">
+    <h2>布局（当前空间：<span id="curSpaceName"></span>）</h2>
+    <div class="palette-add" id="addBtns"></div>
+    <div class="editor-grid" id="grid"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" onclick="saveLayout()">保存布局</button>
+      <button class="btn ghost" onclick="previewFront()">👁 实时预览</button>
+      <label>宽度 <input type="number" id="elW" min="1" max="12" value="12" style="width:56px"> (1-12列)</label>
+    </div>
+    <div id="previewOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center">
+      <div style="width:92vw;height:88vh;background:#fff;border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+        <div style="padding:8px 14px;background:#1a1c22;color:#fff;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px">👁 前台实时预览（iframe）</span>
+          <div>
+            <button class="btn sm ghost" onclick="prevRefresh()">刷新</button>
+            <button class="btn sm danger" onclick="closePreview()">关闭</button>
+          </div>
+        </div>
+        <iframe id="previewFrame" src="/?_preview=1" style="flex:1;border:0;width:100%"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主题编辑 -->
+  <div id="panelTheme" class="panel" style="display:none">
+    <h2>主题令牌（当前空间）</h2>
+    <div class="palettes" id="palettes"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" onclick="saveTheme()">保存主题</button>
+      <button class="btn" onclick="randomTheme()">🎲 手气不错</button>
+      <button class="btn" onclick="resetTheme()">恢复默认</button>
+    </div>
+  </div>
+
+  <!-- 联动规则 -->
+  <div id="panelRules" class="panel" style="display:none">
+    <h2>联动规则（当…就…）</h2>
+    <div id="ruleList"></div>
+    <div class="row" style="margin-top:12px">
+      <select id="ruleEvent"></select>
+      <span style="color:var(--muted)">就</span>
+      <select id="ruleAction"></select>
+      <input id="ruleParam" placeholder="参数（如 spaceId=1）" style="width:240px">
+      <button class="btn primary" onclick="addRule()">＋ 添加规则</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" onclick="testRules()">▶ 测试触发（space.switch）</button>
+      <span style="font-size:11px;color:var(--muted)">保存后规则即刻生效</span>
+    </div>
+  </div>
+</div>
+
+<script>
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+const $ = id => document.getElementById(id);
+let spaces = [], curSpace = null, curLayout = [], curTheme = {};
+let tab = 'space';
+
+async function api(p, o = {}) {
+  if (o.json) { o.body = JSON.stringify(o.json); o.headers = { 'Content-Type': 'application/json' }; }
+  const r = await fetch(p, { ...o, credentials: 'same-origin' });
+  const d = await r.json();
+  if (d.code !== 'OK') throw new Error(d.message || d.code);
+  return d.data;
+}
+function flash(t) { $('msg').textContent = t; setTimeout(() => $('msg').textContent = '', 2000); }
+
+// ---------- 主题预设 ----------
+const PRESETS = [
+  { name: '纸墨（默认）', tokens: {} },
+  { name: '暗夜', tokens: { 'color-bg':'#0d1117','color-card':'#161b22','color-ink':'#e6edf3','color-muted':'#8b949e','color-accent':'#58a6ff','color-line':'#30363d' } },
+  { name: '森林', tokens: { 'color-bg':'#f0f4ef','color-card':'#ffffff','color-ink':'#1c2b1e','color-accent':'#2d6a4f','color-line':'#d8e2d5' } },
+  { name: '海盐', tokens: { 'color-bg':'#eef6f9','color-card':'#ffffff','color-ink':'#12293a','color-accent':'#0369a1','color-line':'#d3e5ee' } },
+  { name: '暖阳', tokens: { 'color-bg':'#fdf6ec','color-card':'#ffffff','color-ink':'#3d2c1e','color-accent':'#c2410c','color-line':'#f0e4d3' } },
+  { name: '葡萄', tokens: { 'color-bg':'#f5f0fa','color-card':'#ffffff','color-ink':'#2a1b3d','color-accent':'#7c3aed','color-line':'#e4d9f2' } },
+];
+const TOKEN_LABELS = {
+  'color-bg': '背景', 'color-card': '卡片', 'color-ink': '文字', 'color-muted': '次要文字',
+  'color-accent': '强调色', 'color-line': '边线', 'radius': '圆角', 'gap': '间距',
+};
+
+function renderPalettes() {
+  const box = $('palettes'); box.innerHTML = '';
+  // 预设
+  for (const p of PRESETS) {
+    const d = document.createElement('div');
+    d.className = 'pal';
+    const colors = ['color-bg','color-card','color-accent','color-ink'].map(k => p.tokens[k] || DEF[k]);
+    d.innerHTML = `<div class="swatches">${colors.map(c=>`<div class="sw" style="background:${c}"></div>`).join('')}</div><div class="name">${p.name}</div>`;
+    d.onclick = () => { curTheme = { ...p.tokens }; renderThemeEditor(); flash('已应用预设：' + p.name); };
+    box.appendChild(d);
+  }
+  // 逐项调色
+  const custom = document.createElement('div');
+  custom.className = 'pal';
+  custom.innerHTML = '<div class="name" style="margin-bottom:8px">🎨 精细调整</div><div id="tokenRows"></div>';
+  box.appendChild(custom);
+  renderThemeEditor();
+}
+const DEF = { 'color-bg':'#f7f4ee','color-card':'#ffffff','color-ink':'#1a2332','color-muted':'#6b7280','color-accent':'#0f766e','color-line':'#e2ddd3','radius':'12px','gap':'16px' };
+function renderThemeEditor() {
+  const rows = $('tokenRows'); if (!rows) return; rows.innerHTML = '';
+  for (const [k, def] of Object.entries(DEF)) {
+    const v = curTheme[k] || def;
+    const row = document.createElement('div');
+    row.className = 'row'; row.style.marginBottom = '6px';
+    const isColor = k.startsWith('color');
+    row.innerHTML = `<label style="width:64px">${TOKEN_LABELS[k]}</label>
+      ${isColor ? `<input type="color" value="${v}" oninput="curTheme['${k}']=this.value">`
+                : `<input value="${v}" style="width:80px" onchange="curTheme['${k}']=this.value">`}`;
+    rows.appendChild(row);
+  }
+}
+function randomTheme() {
+  const h = () => Math.floor(Math.random()*360);
+  const c = (s, l) => `hsl(${h()} ${s}% ${l}%)`;
+  curTheme = {
+    'color-bg': c(30, 95), 'color-card': '#ffffff', 'color-ink': c(30, 15),
+    'color-accent': c(65, 35), 'color-line': c(30, 85), 'color-muted': c(20, 45),
+  };
+  renderThemeEditor(); flash('随机主题已生成，满意就保存');
+}
+function resetTheme() { curTheme = {}; renderThemeEditor(); flash('已重置为默认'); }
+async function saveTheme() {
+  await api(`/api/admin/spaces/${curSpace.id}`, { method: 'PUT', json: { theme_json: curTheme } });
+  flash('✓ 主题已保存，去前台刷新看效果');
+}
+
+// ---------- 布局编辑 ----------
+const WIDGET_TYPES = [
+  { type: 'searchbar', label: '🔍 搜索框', defW: 12, fields: [] },
+  { type: 'clock', label: '🕐 时钟', defW: 12, fields: [] },
+  { type: 'category', label: '📁 分类', defW: 6, fields: [] },
+  { type: 'hitokoto', label: '💬 一言', defW: 12, fields: [] },
+  { type: 'quicknote', label: '📝 速记便签', defW: 12, fields: [] },
+  { type: 'habit', label: '🔥 习惯打卡', defW: 6, fields: [] },
+  { type: 'rss', label: '📰 RSS 订阅', defW: 6, fields: [
+    { key: 'feed', label: 'RSS 源 URL', type: 'text', ph: 'https://hnrss.org/frontpage' },
+    { key: 'limit', label: '条数', type: 'number', min: 1, max: 20 },
+  ] },
+  { type: 'weather', label: '🌤️ 天气', defW: 6, fields: [
+    { key: 'city', label: '城市（拼音）', type: 'text', ph: 'Hangzhou / Shanghai / Beijing' },
+  ] },
+  { type: 'dailyshot', label: '🖼️ 每日一图', defW: 6, fields: [] },
+  { type: 'countdown', label: '⏳ 倒计时', defW: 4, fields: [
+    { key: 'mode', label: '显示模式', type: 'select', options: [
+      { v: 'nearest', label: '只显示最近一个' },
+      { v: 'all', label: '显示全部列表' },
+    ] },
+  ] },
+  { type: 'recent', label: '🕒 最近访问', defW: 6, fields: [
+    { key: 'limit', label: '最多显示条数', type: 'number', min: 1, max: 12 },
+  ] },
+  { type: 'quote', label: '✒️ 句子收藏', defW: 4, fields: [] },
+{ type: 'todo', label: '📝 待办清单', defW: 4, fields: [] },
+{ type: 'pomodoro', label: '🍅 番茄钟', defW: 3, fields: [
+    { key: 'focusMin', label: '专注时长（分钟）', type: 'number', def: 25 },
+    { key: 'restMin', label: '休息时长（分钟）', type: 'number', def: 5 }
+  ] },
+];
+// 公共 props：所有 widget 都能配的自定义样式
+function openCommonProps(i) {
+  const el = curLayout[i];
+  const cur = (el.props || {}).css || '';
+  const curBg = (el.props || {}).bg || '';
+  const artOpts = ['obsidian','violet','abyss','ember','polar','rose'].map(n => `<option value="/art/wallpapers/${n}.jpg">${n}</option>`).join('');
+  const html = `<div style="padding:16px">
+    <label style="display:block;margin:0 0 4px;font-size:12px">背景图片（URL 或内置艺术图）</label>
+    <div style="display:flex;gap:8px">
+      <input id="pf__bg" value="${curBg.replace(/"/g,'&quot;')}" placeholder="https://... 或选择内置 →" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)">
+      <select id="pf__bgPick" style="padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)">
+        <option value="">内置艺术图…</option>${artOpts}
+      </select>
+    </div>
+    <label style="display:block;margin:10px 0 4px;font-size:12px">自定义样式（写 CSS 声明，应用到该模块卡片）</label>
+    <textarea id="pf__css" rows="4" style="width:100%;font-family:monospace;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)" placeholder="background: #fff7ed; border-color: #f59e0b;">${cur.replace(/</g,'&lt;')}</textarea>
+    <div style="margin-top:12px;text-align:right"><button class="btn" onclick="saveCommonProps(${i})">保存</button></div>
+  </div>`;
+  const m = document.createElement('div');
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:grid;place-items:center';
+  m.innerHTML = `<div style="background:var(--card);border-radius:12px;min-width:min(480px,92vw)" onclick="event.stopPropagation()">${html}</div>`;
+  m.onclick = () => m.remove();
+  document.body.appendChild(m);
+}
+function saveCommonProps(i) {
+  const bgInput = document.getElementById('pf__bg'), bgPick = document.getElementById('pf__bgPick');
+  curLayout[i].props = { ...(curLayout[i].props || {}), css: document.getElementById('pf__css').value.trim(), bg: (bgPick.value || bgInput.value.trim()) };
+  document.querySelectorAll('div[style*="inset:0"]').forEach(d => d.remove());
+  renderGrid(); flash('✓ 样式已改，保存布局后生效');
+}
+function openProps(i) {
+  const el = curLayout[i];
+  const def = WIDGET_TYPES.find(w => w.type === el.type);
+  const fields = def?.fields || [];
+  if (!fields.length) { openCommonProps(i); return; }
+  const body = fields.map(f => {
+    const cur = (el.props || {})[f.key] ?? '';
+    if (f.type === 'select') {
+      const opts = f.options.map(o => `<option value="${o.v}" ${cur === o.v ? 'selected' : ''}>${o.label}</option>`).join('');
+      return `<label style="display:block;margin:10px 0 4px;font-size:12px">${f.label}</label><select id="pf_${f.key}" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)">${opts}</select>`;
+    }
+    return `<label style="display:block;margin:10px 0 4px;font-size:12px">${f.label}</label><input id="pf_${f.key}" type="${f.type}" value="${String(cur).replace(/"/g, '&quot;')}" ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} placeholder="${f.ph || ''}" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)">`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:100';
+  ov.innerHTML = `<div style="background:var(--card);color:var(--ink);border-radius:12px;padding:18px;width:340px;max-width:92vw">
+    <b>⚙️ ${def?.label || el.type} 设置</b>${body}
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" id="pCancel">取消</button>
+      <button class="btn" id="pSave" style="background:var(--accent);color:#fff">保存</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#pCancel').onclick = () => ov.remove();
+  ov.querySelector('#pSave').onclick = () => {
+    el.props = el.props || {};
+    for (const f of fields) {
+      const v = ov.querySelector('#pf_' + f.key).value;
+      if (f.type === 'number') { const n = Number(v); el.props[f.key] = Number.isFinite(n) && v !== '' ? n : undefined; }
+      else el.props[f.key] = v || undefined;
+    }
+    ov.remove(); renderGrid(); flash('✓ 参数已改，保存布局后生效');
+  };
+}
+function renderAddBtns() {
+  $('addBtns').innerHTML = WIDGET_TYPES.map(w => `<button class="btn" onclick="addWidget('${w.type}')">＋ ${w.label}</button>`).join('');
+}
+async function addWidget(type) {
+  const def = WIDGET_TYPES.find(w => w.type === type);
+  const el = { type, props: {}, w: def.defW };
+  if (type === 'category') {
+    const cats = await api('/api/admin/categories');
+    if (!cats.length) return alert('先去后台创建分类');
+    const names = cats.map((c, i) => `${i + 1}. ${c.icon} ${c.name}`).join('\n');
+    const idx = Number(prompt('绑定哪个分类？\n' + names, '1'));
+    const cat = cats[idx - 1];
+    if (!cat) return;
+    el.categoryId = cat.id;
+    el.label = '📁 ' + cat.name;
+  }
+  curLayout.push(el);
+  renderGrid();
+}
+function renderGrid() {
+  const g = $('grid'); g.innerHTML = '';
+  if (!curLayout.length) { g.innerHTML = '<div class="empty-hint">空布局 — 从上方「＋」添加第一个模块</div>'; return; }
+  curLayout.forEach((el, i) => {
+    const d = document.createElement('div');
+    d.className = 'welement';
+    d.style.gridColumn = `span ${el.w || 12}`;
+    d.draggable = true;
+    d.dataset.idx = i;
+    d.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(i)); d.style.opacity = '.4'; });
+    d.addEventListener('dragend', () => { d.style.opacity = ''; });
+    d.addEventListener('dragover', e => { e.preventDefault(); d.style.outline = '2px dashed var(--accent)'; });
+    d.addEventListener('dragleave', () => { d.style.outline = ''; });
+    d.addEventListener('drop', e => {
+      e.preventDefault(); d.style.outline = '';
+      const from = Number(e.dataTransfer.getData('text/plain'));
+      const to = Number(d.dataset.idx);
+      if (!Number.isNaN(from) && from !== to) {
+        const [m] = curLayout.splice(from, 1);
+        curLayout.splice(to, 0, m);
+        renderGrid();
+      }
+    });
+    const label = el.label || ({ searchbar: '🔍 搜索框', clock: '🕐 时钟', hitokoto: '💬 一言', quicknote: '📝 速记便签', habit: '🔥 习惯打卡', rss: '📰 RSS', weather: '🌤️ 天气', dailyshot: '🖼️ 每日一图', countdown: '⏳ 倒计时', recent: '🕒 最近访问', quote: '✒️ 句子收藏', todo: '📝 待办清单', pomodoro: '🍅 番茄钟' }[el.type] || el.type + ' 模块');
+    if (el.hidden) d.style.opacity = '.45';
+    d.innerHTML = `<span class="wtype">${label}</span>
+      <span style="font-size:11px;color:var(--muted)">（${el.w || 12}列）</span>
+      <div class="wops">
+        <button onclick="toggleHidden(${i})" title="前台显示/隐藏">${el.hidden ? '🚫' : '👁'}</button>
+        <button onclick="openProps(${i})" title="模块设置">⚙️</button>
+        <button onclick="moveEl(${i},-1)">←</button>
+        <button onclick="moveEl(${i},1)">→</button>
+        <button onclick="resizeEl(${i})">宽度</button>
+        <button class="danger" onclick="delEl(${i})">✕</button>
+      </div>`;
+    g.appendChild(d);
+  });
+}
+function moveEl(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= curLayout.length) return;
+  [curLayout[i], curLayout[j]] = [curLayout[j], curLayout[i]];
+  renderGrid();
+}
+function resizeEl(i) {
+  const w = Number(prompt('宽度（1-12 列）', curLayout[i].w || 12));
+  if (w >= 1 && w <= 12) { curLayout[i].w = w; renderGrid(); }
+}
+function delEl(i) { curLayout.splice(i, 1); renderGrid(); }
+function toggleHidden(i) { curLayout[i].hidden = curLayout[i].hidden ? undefined : true; if (!curLayout[i].hidden) delete curLayout[i].hidden; renderGrid(); }
+async function saveLayout() {
+  await api(`/api/admin/spaces/${curSpace.id}`, { method: 'PUT', json: { layout_json: curLayout } });
+  flash('✓ 布局已保存');
+}
+function previewFront() { $('previewOverlay').style.display = 'flex'; prevRefresh(); }
+function closePreview() { $('previewOverlay').style.display = 'none'; }
+function prevRefresh() { $('previewFrame').src = '/?_t=' + Date.now(); }
+
+// ---------- 空间管理 ----------
+async function renderSpaces() {
+  spaces = await api('/api/admin/spaces');
+  const t = $('spTable');
+  t.innerHTML = '<tr style="color:var(--muted)"><th>空间</th><th>布局模块数</th><th>操作</th></tr>';
+  for (const s of spaces) {
+    const n = (JSON.parse(s.layout_json || '[]')).length;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="padding:8px 4px">${esc(s.icon)} <b>${esc(s.name)}</b>${s.id === curSpace?.id ? ' <span style="color:var(--blue);font-size:11px">当前</span>' : ''}</td>
+      <td>${n}</td>
+      <td><button class="btn sm" onclick="pickSpace(${s.id})">编辑布局/主题</button>
+      <button class="btn sm danger" onclick="delSpace(${s.id})">删除</button></td>`;
+    t.appendChild(tr);
+  }
+}
+async function addSpace() {
+  const name = $('spName').value.trim(); if (!name) return alert('请输入空间名称');
+  const created = await api('/api/admin/spaces', { method: 'POST', json: { name, icon: $('spIcon').value.trim() || '🏠' } });
+  $('spName').value = ''; $('spIcon').value = '';
+  await renderSpaces();
+  pickSpace(created.id);
+}
+async function delSpace(id) {
+  if (!confirm('删除空间及其全部布局配置？')) return;
+  await api(`/api/admin/spaces/${id}`, { method: 'DELETE' });
+  if (curSpace?.id === id) { curSpace = null; curLayout = []; curTheme = {}; }
+  renderSpaces();
+}
+async function pickSpace(id) {
+  curSpace = spaces.find(s => s.id === id) || spaces.find(s => s.id === id);
+  curSpace = await api('/api/admin/spaces').then(list => list.find(s => s.id === id));
+  curLayout = JSON.parse(curSpace.layout_json || '[]');
+  curTheme = JSON.parse(curSpace.theme_json || '{}');
+  $('curSpaceName').textContent = curSpace.icon + ' ' + curSpace.name;
+  renderSpaces(); renderGrid(); renderPalettes();
+  switchTab('layout');
+}
+
+// ---------- 联动规则 ----------
+let autoData = { rules: [], actions: [], events: [] };
+let curRules = [];
+async function loadRules() {
+  autoData = await api('/api/admin/automation');
+  curRules = autoData.rules;
+  $('ruleEvent').innerHTML = autoData.events.map(e => `<option value="${e.event}">${e.label} (${e.event})</option>`).join('');
+  $('ruleAction').innerHTML = autoData.actions.map(a => `<option value="${a.action}">${a.label} (${a.action})</option>`).join('');
+  renderRules();
+}
+function renderRules() {
+  const box = $('ruleList');
+  if (!curRules.length) { box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">还没有规则。当某事件发生时执行动作，比如「当空间切换 就 写日志」。</div>'; return; }
+  box.innerHTML = '';
+  curRules.forEach((r, i) => {
+    const ev = autoData.events.find(e => e.event === r.when.event);
+    const ac = autoData.actions.find(a => a.action === r.then.action);
+    const d = document.createElement('div');
+    d.className = 'row'; d.style.padding = '6px 0'; d.style.borderBottom = '1px solid var(--line)';
+    d.innerHTML = `<span style="font-size:13px"><b>当</b> ${ev?.label || r.when.event} <b>就</b> ${ac?.label || r.then.action}（${JSON.stringify(r.then.params || {})}）</span>`;
+    const del = document.createElement('button');
+    del.className = 'btn sm danger'; del.textContent = '删除';
+    del.onclick = () => { curRules.splice(i, 1); saveRules(); renderRules(); };
+    d.appendChild(del);
+    box.appendChild(d);
+  });
+}
+async function addRule() {
+  const event = $('ruleEvent').value;
+  const action = $('ruleAction').value;
+  const raw = $('ruleParam').value.trim();
+  let params = {};
+  if (raw) {
+    try { params = JSON.parse(raw); } catch {
+      // 宽松解析 k=v 空格分隔
+      for (const kv of raw.split(/\s+/)) { const [k, ...v] = kv.split('='); if (k && v.length) params[k] = isNaN(Number(v.join('='))) ? v.join('=') : Number(v.join('=')); }
+    }
+  }
+  curRules.push({ id: 'r' + Date.now(), when: { event }, then: { action, params } });
+  await saveRules();
+  renderRules();
+  $('ruleParam').value = '';
+  flash('✓ 规则已保存');
+}
+async function saveRules() { await api('/api/admin/automation', { method: 'PUT', json: { rules: curRules } }); }
+async function testRules() {
+  const d = await api('/api/admin/automation/test', { method: 'POST', json: { event: 'space.switch', payload: { spaceId: 1 } } });
+  flash(d.fired.length ? `✓ 触发了 ${d.fired.length} 条规则` : '没有规则匹配该事件');
+}
+
+// ---------- tabs ----------
+function switchTab(t) {
+  tab = t;
+  for (const x of ['Space', 'Layout', 'Theme', 'Rules']) $('panel' + x).style.display = 'none';
+  $('panel' + t[0].toUpperCase() + t.slice(1)).style.display = 'block';
+  document.querySelectorAll('.tabs .btn').forEach(b => b.classList.remove('active'));
+  $('tab' + t[0].toUpperCase() + t.slice(1)).classList.add('active');
+  if (t === 'rules') loadRules();
+}
+$('tabSpace').onclick = () => switchTab('space');
+$('tabLayout').onclick = () => { if (!curSpace) return alert('先在空间列表选择一个空间'); switchTab('layout'); };
+$('tabTheme').onclick = () => { if (!curSpace) return alert('先在空间列表选择一个空间'); switchTab('theme'); };
+$('tabRules').onclick = () => switchTab('rules');
+
+// init：自动登录检查
+api('/api/admin/me').then(async () => { await renderSpaces(); switchTab('space'); })
+  .catch(() => { location.href = '/admin/admin.html'; });
+</script>
+</body>
+</html>

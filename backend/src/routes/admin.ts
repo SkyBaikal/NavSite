@@ -1,0 +1,542 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
+import { db } from '../database.js';
+
+export const adminRouter = Router();
+// 审计：挂 router 级，requireAdmin 之后的写操作自动落 events_log
+adminRouter.use(auditTrail);
+
+// ---- 简单签名 session ----
+const SECRET = process.env.NAV_SECRET || crypto.randomBytes(32).toString('hex');
+const COOKIE = 'nav_session';
+const MAX_AGE = 7 * 24 * 3600 * 1000;
+
+function sign(payload: string) {
+  const mac = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
+  return `${Buffer.from(payload).toString('base64url')}.${mac}`;
+}
+function verify(token: string): { user: string } | null {
+  const [p, mac] = token.split('.');
+  if (!p || !mac) return null;
+  const payload = Buffer.from(p, 'base64url').toString();
+  const expect = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
+  if (mac.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expect))) return null;
+  const data = JSON.parse(payload);
+  if (Date.now() - data.iat > MAX_AGE) return null;
+  return data;
+}
+
+// 登录限速（内存）
+const fails = new Map<string, { n: number; until: number }>();
+function rateLimit(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip || 'unknown';
+  const f = fails.get(ip);
+  if (f && f.until > Date.now()) {
+    return res.status(429).json({ code: 'RATE_LIMITED', message: '尝试过多，请稍后再试' });
+  }
+  next();
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const raw = req.headers.cookie || '';
+  const m = raw.match(new RegExp(`${COOKIE}=([^;]+)`));
+  if (m) {
+    const data = verify(decodeURIComponent(m[1]));
+    if (data) {
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      // viewer 角色禁止一切写操作（读操作放行）
+      if (parsed.role === 'viewer' && ['POST', 'PUT', 'DELETE'].includes(req.method) && !req.path.startsWith('/login') && !req.path.startsWith('/logout')) {
+        return res.status(403).json({ code: 'FORBIDDEN', message: '只读账号无权执行写操作' });
+      }
+      (req as any).role = parsed.role || 'admin';
+      return next();
+    }
+  }
+  res.status(401).json({ code: 'UNAUTHORIZED', message: '请先登录' });
+}
+
+// ---- 操作审计：所有 admin 写操作（POST/PUT/DELETE 成功后）落 events_log ----
+export function auditTrail(req: Request, res: Response, next: NextFunction) {
+  if (!['POST', 'PUT', 'DELETE'].includes(req.method)) return next();
+  const orig = res.json.bind(res);
+  res.json = (body: any) => {
+    if (body?.code === 'OK' && !req.path.startsWith('/automation/test')) {
+      try {
+        db.prepare('INSERT INTO events_log (type, payload_json) VALUES (?, ?)').run(
+          `audit.${req.method.toLowerCase()}:${req.path}`,
+          JSON.stringify({ body: { ...(req.body || {}) }, at: new Date().toISOString() }).slice(0, 2000)
+        );
+      } catch { /* 审计失败不阻塞业务 */ }
+    }
+    return orig(body);
+  };
+  next();
+}
+
+// ---- 认证 ----
+adminRouter.post('/login', rateLimit, (req, res) => {
+  const { username, password } = req.body || {};
+  // 查询两个账号表：admin（全权）+ viewer（只读）
+  let row: any = db.prepare(`SELECT username, password_hash, 'admin' AS role FROM admin WHERE id = 1 AND username = ?`).get(username);
+  let role = row?.role;
+  if (!row) {
+    try {
+      const v = db.prepare('SELECT username, password_hash FROM admin_viewers WHERE username = ?').get(username) as any;
+      if (v) { row = v; role = 'viewer'; }
+    } catch { /* admin_viewers 表不存在则忽略 */ }
+  }
+  if (!row || role === undefined || !bcrypt.compareSync(String(password || ''), row.password_hash)) {
+    const ip = req.ip || 'unknown';
+    const f = fails.get(ip) || { n: 0, until: 0 };
+    f.n++;
+    if (f.n >= 5) { f.until = Date.now() + 10 * 60 * 1000; f.n = 0; }
+    fails.set(ip, f);
+    return res.status(401).json({ code: 'BAD_CREDENTIALS', message: '账号或密码错误' });
+  }
+  fails.delete(req.ip || 'unknown');
+  const token = sign(JSON.stringify({ user: row.username, role, iat: Date.now() }));
+  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${MAX_AGE / 1000}`);
+  res.json({ code: 'OK', data: { user: row.username, role } });
+});
+
+// 只读账号管理（全权 admin 专用）
+adminRouter.get('/viewers', requireAdmin, (_req, res) => {
+  try { res.json({ code: 'OK', data: db.prepare('SELECT username, created_at FROM admin_viewers').all() }); }
+  catch { res.json({ code: 'OK', data: [] }); }
+});
+adminRouter.post('/viewers', requireAdmin, (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password || String(password).length < 6) return res.status(400).json({ code: 'INVALID', message: '用户名必填，密码 ≥6 位' });
+  try {
+    db.prepare('INSERT INTO admin_viewers (username, password_hash) VALUES (?, ?)').run(String(username), bcrypt.hashSync(String(password), 10));
+    res.json({ code: 'OK' });
+  } catch (e: any) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ code: 'DUP', message: '用户名已存在' });
+    throw e;
+  }
+});
+// ===== 修改管理员密码 =====
+adminRouter.post('/password', requireAdmin, (req, res) => {
+  const { oldPassword, newPassword } = req.body || {};
+  if (!oldPassword || !newPassword) return res.status(400).json({ code: 'INVALID', message: '旧密码与新密码必填' });
+  if (String(newPassword).length < 8) return res.status(400).json({ code: 'INVALID', message: '新密码至少 8 位' });
+  const row = db.prepare('SELECT password_hash FROM admin WHERE id = 1').get() as any;
+  if (!row || !bcrypt.compareSync(String(oldPassword), row.password_hash)) {
+    return res.status(403).json({ code: 'FORBIDDEN', message: '旧密码不正确' });
+  }
+  db.prepare('UPDATE admin SET password_hash = ? WHERE id = 1').run(bcrypt.hashSync(String(newPassword), 10));
+  try { db.prepare("INSERT INTO events_log (type, payload_json, created_at) VALUES ('audit.password.change', ?, datetime('now','localtime'))").run(JSON.stringify({ detail: `管理员密码已修改（by ${ (req as any).user?.username || 'admin' }）` })); } catch {}
+  res.json({ code: 'OK' });
+});
+
+adminRouter.delete('/viewers/:username', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM admin_viewers WHERE username = ?').run(req.params.username);
+  res.json({ code: 'OK' });
+});
+
+adminRouter.post('/logout', (_req, res) => {
+  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  res.json({ code: 'OK' });
+});
+
+adminRouter.get('/me', requireAdmin, (req, res) => {
+  res.json({ code: 'OK', data: { user: (verify((req.headers.cookie || '').match(new RegExp(`${COOKIE}=([^;]+)`) || ['', ''])[1] || '') || {}).user } });
+});
+
+// ---- 分类 CRUD ----
+adminRouter.get('/categories', requireAdmin, (_req, res) => {
+  res.json({ code: 'OK', data: db.prepare('SELECT * FROM categories ORDER BY sort_order').all() });
+});
+adminRouter.post('/categories', requireAdmin, (req, res) => {
+  const { name, icon = '', sort_order = 0 } = req.body || {};
+  if (!name) return res.status(400).json({ code: 'INVALID', message: 'name 必填' });
+  const r = db.prepare('INSERT INTO categories (name, icon, sort_order) VALUES (?, ?, ?)').run(name, icon, sort_order);
+  res.status(201).json({ code: 'OK', data: { id: r.lastInsertRowid } });
+});
+adminRouter.put('/categories/:id', requireAdmin, (req, res) => {
+  const c = db.prepare('SELECT id FROM categories WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ code: 'NOT_FOUND' });
+  const { name, icon, sort_order, is_visible } = req.body || {};
+  db.prepare('UPDATE categories SET name = COALESCE(?, name), icon = COALESCE(?, icon), sort_order = COALESCE(?, sort_order), is_visible = COALESCE(?, is_visible) WHERE id = ?')
+    .run(name ?? null, icon ?? null, sort_order ?? null, is_visible ?? null, req.params.id);
+  res.json({ code: 'OK' });
+});
+adminRouter.delete('/categories/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
+  res.json({ code: 'OK' });
+});
+// 分类批量重排：{ orders: [{id, sort_order}] }
+adminRouter.post('/categories/reorder', requireAdmin, (req, res) => {
+  const orders = req.body?.orders;
+  if (!Array.isArray(orders) || orders.length > 100) return res.status(400).json({ code: 'INVALID' });
+  const tx = db.transaction((list: any[]) => {
+    for (const o of list) {
+      if (typeof o.id !== 'number' || typeof o.sort_order !== 'number') continue;
+      db.prepare('UPDATE categories SET sort_order = ? WHERE id = ?').run(o.sort_order, o.id);
+    }
+  });
+  tx(orders);
+  res.json({ code: 'OK', data: { updated: orders.length } });
+});
+
+// ---- 链接 CRUD ----
+adminRouter.get('/links', requireAdmin, (_req, res) => {
+  res.json({ code: 'OK', data: db.prepare('SELECT * FROM links ORDER BY category_id, sort_order').all() });
+});
+adminRouter.post('/links', requireAdmin, (req, res) => {
+  const { category_id, title, url, description = '', icon_url = '', sort_order = 0 } = req.body || {};
+  if (!category_id || !title || !url) return res.status(400).json({ code: 'INVALID', message: 'category_id/title/url 必填' });
+  try {
+    const r = db.prepare('INSERT INTO links (category_id, title, url, description, icon_url, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(category_id, title, url, description, icon_url, sort_order);
+    res.status(201).json({ code: 'OK', data: { id: r.lastInsertRowid } });
+  } catch (e: any) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ code: 'DUP_URL', message: '该链接已存在' });
+    throw e;
+  }
+});
+adminRouter.put('/links/:id', requireAdmin, (req, res) => {
+  const l = db.prepare('SELECT id FROM links WHERE id = ?').get(req.params.id);
+  if (!l) return res.status(404).json({ code: 'NOT_FOUND' });
+  const b = req.body || {};
+  db.prepare(`UPDATE links SET category_id = COALESCE(?, category_id), title = COALESCE(?, title), url = COALESCE(?, url),
+    description = COALESCE(?, description), icon_url = COALESCE(?, icon_url), sort_order = COALESCE(?, sort_order),
+    is_visible = COALESCE(?, is_visible), updated_at = datetime('now') WHERE id = ?`)
+    .run(b.category_id ?? null, b.title ?? null, b.url ?? null, b.description ?? null, b.icon_url ?? null, b.sort_order ?? null, b.is_visible ?? null, req.params.id);
+  res.json({ code: 'OK' });
+});
+adminRouter.delete('/links/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM links WHERE id = ?').run(req.params.id);
+  res.json({ code: 'OK' });
+});
+// 链接批量重排：{ orders: [{id, sort_order, category_id?}] }（拖拽排序/跨分类移动共用）
+adminRouter.post('/links/reorder', requireAdmin, (req, res) => {
+  const orders = req.body?.orders;
+  if (!Array.isArray(orders) || orders.length > 500) return res.status(400).json({ code: 'INVALID' });
+  const tx = db.transaction((list: any[]) => {
+    for (const o of list) {
+      if (typeof o.id !== 'number' || typeof o.sort_order !== 'number') continue;
+      db.prepare('UPDATE links SET sort_order = ?, category_id = COALESCE(?, category_id), updated_at = datetime(\'now\') WHERE id = ?')
+        .run(o.sort_order, o.category_id ?? null, o.id);
+    }
+  });
+  tx(orders);
+  res.json({ code: 'OK', data: { updated: orders.length } });
+});
+
+// ---- 空间 CRUD ----
+// 给布局内每个 widget 分配稳定 id（wN 递增），联动规则/widget state 依赖它
+function assignWidgetIds(layout: any[], existing: any[] = []): any[] {
+  let maxId = 0;
+  for (const w of existing) {
+    const m = typeof w?.id === 'string' && /^w(\d+)$/.exec(w.id);
+    if (m) maxId = Math.max(maxId, +m[1]);
+  }
+  return layout.map(w => {
+    if (w.id) return w;
+    maxId += 1;
+    return { ...w, id: 'w' + maxId };
+  });
+}
+function parseLayout(v: any): any[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
+  return [];
+}
+adminRouter.get('/spaces', requireAdmin, (_req, res) => {
+  res.json({ code: 'OK', data: db.prepare('SELECT * FROM spaces ORDER BY sort_order').all() });
+});
+adminRouter.post('/spaces', requireAdmin, (req, res) => {
+  const { name, icon = '🏠', layout_json = [], theme_json = {}, switch_rule = { mode: 'manual' } } = req.body || {};
+  if (!name) return res.status(400).json({ code: 'INVALID', message: 'name 必填' });
+  // 兼容前端传字符串或对象：统一存为单层 JSON 字符串
+  const norm = (v, dflt) => {
+    if (v === undefined || v === null) return JSON.stringify(dflt);
+    if (typeof v === 'string') { try { JSON.parse(v); return v; } catch { return JSON.stringify(dflt); } }
+    return JSON.stringify(v);
+  };
+  const layout = assignWidgetIds(parseLayout(layout_json));
+  const r = db.prepare('INSERT INTO spaces (name, icon, layout_json, theme_json, switch_rule) VALUES (?, ?, ?, ?, ?)')
+    .run(name, icon, JSON.stringify(layout), norm(theme_json, {}), norm(switch_rule, { mode: 'manual' }));
+  res.status(201).json({ code: 'OK', data: { id: r.lastInsertRowid } });
+});
+adminRouter.put('/spaces/:id', requireAdmin, (req, res) => {
+  const s = db.prepare('SELECT id FROM spaces WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ code: 'NOT_FOUND' });
+  const b = req.body || {};
+  const norm = (v, dflt) => {
+    if (v === undefined) return null;
+    if (typeof v === 'string') { try { JSON.parse(v); return v; } catch { return JSON.stringify(dflt); } }
+    return JSON.stringify(v);
+  };
+  const prev = db.prepare('SELECT layout_json FROM spaces WHERE id = ?').get(req.params.id);
+  const layout = assignWidgetIds(
+    parseLayout(b.layout_json !== undefined ? b.layout_json : prev?.layout_json),
+    parseLayout(prev?.layout_json),
+  );
+  db.prepare('UPDATE spaces SET name = COALESCE(?, name), icon = COALESCE(?, icon), layout_json = COALESCE(?, layout_json), theme_json = COALESCE(?, theme_json), switch_rule = COALESCE(?, switch_rule), sort_order = COALESCE(?, sort_order) WHERE id = ?')
+    .run(b.name ?? null, b.icon ?? null, b.layout_json !== undefined ? JSON.stringify(layout) : null, norm(b.theme_json, {}), norm(b.switch_rule, { mode: 'manual' }), b.sort_order ?? null, req.params.id);
+  res.json({ code: 'OK' });
+});
+adminRouter.delete('/spaces/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM spaces WHERE id = ?').run(req.params.id);
+  res.json({ code: 'OK' });
+});
+
+// ---- widget 实例 ----
+adminRouter.post('/widgets', requireAdmin, (req, res) => {
+  const { space_id, type, props_json = {}, sort_order = 0 } = req.body || {};
+  if (!space_id || !type) return res.status(400).json({ code: 'INVALID', message: 'space_id/type 必填' });
+  const r = db.prepare('INSERT INTO widgets (space_id, type, props_json, sort_order) VALUES (?, ?, ?, ?)')
+    .run(space_id, type, JSON.stringify(props_json), sort_order);
+  res.status(201).json({ code: 'OK', data: { id: r.lastInsertRowid } });
+});
+adminRouter.put('/widgets/:id', requireAdmin, (req, res) => {
+  const b = req.body || {};
+  db.prepare('UPDATE widgets SET props_json = COALESCE(?, props_json), sort_order = COALESCE(?, sort_order), enabled = COALESCE(?, enabled) WHERE id = ?')
+    .run(b.props_json === undefined ? null : JSON.stringify(b.props_json), b.sort_order ?? null, b.enabled ?? null, req.params.id);
+  res.json({ code: 'OK' });
+});
+adminRouter.delete('/widgets/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM widgets WHERE id = ?').run(req.params.id);
+  res.json({ code: 'OK' });
+});
+
+// ---- 设置 ----
+adminRouter.get('/settings', requireAdmin, (_req, res) => {
+  res.json({ code: 'OK', data: db.prepare('SELECT key, value FROM settings').all() });
+});
+adminRouter.put('/settings', requireAdmin, (req, res) => {
+  const entries = Object.entries(req.body || {});
+  const up = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+  const tx = db.transaction(() => { for (const [k, v] of entries) up.run(k, String(v)); });
+  tx();
+  res.json({ code: 'OK' });
+});
+
+// ---- 数据统计（全部本地事件流，零外部依赖）----
+
+
+// ---- 外观/文案自定义（后台 → 前台遥控）----
+const APPEARANCE_KEYS = ['custom_css', 'site_name', 'footer_text', 'search_placeholder', 'search_engines'];
+adminRouter.get('/appearance', requireAdmin, (_req, res) => {
+  const out = {};
+  for (const k of APPEARANCE_KEYS) {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('appearance.' + k) as any;
+    out[k] = row?.value ?? '';
+  }
+  res.json({ code: 'OK', data: out });
+});
+adminRouter.put('/appearance', requireAdmin, (req, res) => {
+  const b = req.body || {};
+  for (const k of APPEARANCE_KEYS) {
+    if (b[k] === undefined) continue;
+    const v = String(b[k]).slice(0, k === 'custom_css' ? 100000 : 2000);
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run('appearance.' + k, v);
+  }
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('audit.appearance', ?)")
+    .run(JSON.stringify({ keys: Object.keys(b).filter((k: string) => APPEARANCE_KEYS.includes(k)) }));
+  res.json({ code: 'OK' });
+});
+
+// CSV 报表导出（链接清单+点击统计）
+adminRouter.get('/export/links.csv', requireAdmin, (_req, res) => {
+  const rows = db.prepare('SELECT l.id, l.title, l.url, c.name AS category, l.clicks, l.created_at FROM links l LEFT JOIN categories c ON c.id = l.category_id ORDER BY c.sort_order, l.sort_order').all() as any[];
+  const esc = (s: any) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+  const lines = ['\ufeff标题,URL,分类,点击次数,创建时间'];
+  for (const r of rows) lines.push([esc(r.title), esc(r.url), esc(r.category), r.clicks ?? 0, esc(r.created_at)].join(','));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="navsite-links.csv"');
+  res.send(lines.join('\n'));
+});
+
+// 事件日志 CSV 导出
+adminRouter.get('/export/events.csv', requireAdmin, (_req, res) => {
+  const rows = db.prepare('SELECT type, payload_json, created_at FROM events_log ORDER BY id DESC LIMIT 5000').all() as any[];
+  const esc = (s: any) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+  const lines = ['\ufeff类型,载荷,时间'];
+  for (const r of rows) lines.push([esc(r.type), esc(r.payload_json), esc(r.created_at)].join(','));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="navsite-events.csv"');
+  res.send(lines.join('\n'));
+});
+
+adminRouter.get('/stats', requireAdmin, (_req, res) => {
+  // 点击 Top10（links.clicks 累计列）
+  const topLinks = db.prepare('SELECT title, url, clicks FROM links WHERE clicks > 0 ORDER BY clicks DESC LIMIT 10').all();
+  // 近 14 天每日 link.click 趋势
+  const trend: { day: string; count: number }[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const day = d.toISOString().slice(0, 10);
+    const row = db.prepare(`SELECT count(*) AS c FROM events_log WHERE type = 'link.click' AND date(created_at) = ?`).get(day) as any;
+    trend.push({ day, count: row?.c || 0 });
+  }
+  // 事件分布（最近 500 条）
+  const eventDist = db.prepare(`SELECT type, count(*) AS c FROM events_log WHERE id > (SELECT MAX(id) - 500 FROM events_log) GROUP BY type ORDER BY c DESC LIMIT 12`).all();
+  // 最近 20 条事件（实时流水）
+  const recentEvents = db.prepare('SELECT type, payload_json, created_at FROM events_log ORDER BY id DESC LIMIT 20').all();
+  // 总览
+  const totals = {
+    links: (db.prepare('SELECT count(*) AS c FROM links').get() as any).c,
+    categories: (db.prepare('SELECT count(*) AS c FROM categories').get() as any).c,
+    spaces: (db.prepare('SELECT count(*) AS c FROM spaces').get() as any).c,
+    totalClicks: (db.prepare('SELECT coalesce(sum(clicks),0) AS c FROM links').get() as any).c,
+    events: (db.prepare('SELECT count(*) AS c FROM events_log').get() as any).c,
+    dbBytes: (db.prepare("SELECT page_count * page_size AS c FROM pragma_page_count(), pragma_page_size()").get() as any).c,
+  };
+  res.json({ code: 'OK', data: { topLinks, trend, eventDist, recentEvents, totals } });
+});
+
+// ---- widget 数据总览/管理（后台直管前台用户数据）----
+// 全部 widget 的 user_state 一览（哪些模块存了什么数据、多大）
+adminRouter.get('/widget-data', requireAdmin, (_req, res) => {
+  const rows = db.prepare(`
+    SELECT u.widget_id, u.key, length(u.value_json) AS bytes
+    FROM user_state u
+    ORDER BY u.widget_id, u.key`).all();
+  // countdowns 存 settings，也一并列出
+  const cd = db.prepare("SELECT value FROM settings WHERE key = 'countdowns'").get() as any;
+  const countdownCount = cd ? (JSON.parse(cd.value) as any[]).length : 0;
+  res.json({ code: 'OK', data: { states: rows, countdownCount } });
+});
+// 清空某个 widget 的某项状态（保留 widget 本身）
+adminRouter.delete('/widget-data/:widgetId/:key', requireAdmin, (req, res) => {
+  const r = db.prepare('DELETE FROM user_state WHERE widget_id = ? AND key = ?').run(req.params.widgetId, req.params.key);
+  if (r.changes === 0) return res.status(404).json({ code: 'NOT_FOUND', message: '无该状态' });
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('audit.widget_data.clear', ?)")
+    .run(JSON.stringify({ widgetId: req.params.widgetId, key: req.params.key, by: (req as any).user?.username || 'admin' }));
+  res.json({ code: 'OK', cleared: r.changes });
+});
+// 清空全部倒计时
+adminRouter.delete('/widget-data/countdowns', requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM settings WHERE key = 'countdowns'").run();
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('audit.widget_data.clear', ?)")
+    .run(JSON.stringify({ key: 'countdowns', by: (req as any).user?.username || 'admin' }));
+  res.json({ code: 'OK' });
+});
+
+// ---- widget 运行时状态 ----
+adminRouter.get('/widgets/:id/state', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT value_json FROM user_state WHERE widget_id = ? AND key = ?').get(req.params.id, String(req.query.key || 'note'));
+  res.json({ code: 'OK', data: row ? JSON.parse(row.value_json) : null });
+});
+adminRouter.post('/widgets/:id/state', requireAdmin, (req, res) => {
+  const { key = 'note', value = null } = req.body || {};
+  db.prepare('INSERT INTO user_state (widget_id, key, value_json) VALUES (?, ?, ?) ON CONFLICT(widget_id, key) DO UPDATE SET value_json = excluded.value_json')
+    .run(req.params.id, String(key), JSON.stringify(value));
+  res.json({ code: 'OK' });
+});
+
+// ---- 书签导入（浏览器导出的 HTML）----
+adminRouter.post('/import/bookmarks', requireAdmin, (req, res) => {
+  const { html, defaultCategory = '导入书签' } = req.body || {};
+  if (!html || typeof html !== 'string' || html.length > 5_000_000) {
+    return res.status(400).json({ code: 'INVALID', message: '需要书签 HTML 内容（<5MB）' });
+  }
+  // 解析 <DT><H3>文件夹名</H3> 与 <DT><A href>标题</A>
+  const items: { folder: string; title: string; url: string }[] = [];
+  let folder = '';
+  const re = /<h3[^>]*>([^<]+)<\/h3>|<a[^>]+href="([^"]+)"[^>]*>([^<]*)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    if (m[1] !== undefined) { folder = m[1].trim(); }
+    else if (m[2]) {
+      const url = m[2];
+      if (!/^https?:\/\//i.test(url)) continue;
+      items.push({ folder, title: (m[3] || url).trim().slice(0, 100), url });
+    }
+  }
+  if (!items.length) return res.json({ code: 'OK', data: { imported: 0 } });
+
+  // 建默认分类（或复用）
+  let cat = db.prepare('SELECT id FROM categories WHERE name = ?').get(defaultCategory) as any;
+  if (!cat) {
+    const r = db.prepare('INSERT INTO categories (name, icon, sort_order) VALUES (?, ?, 999)').run(defaultCategory, '📥');
+    cat = { id: Number(r.lastInsertRowid) };
+  }
+  const ins = db.prepare('INSERT OR IGNORE INTO links (category_id, title, url, description) VALUES (?, ?, ?, ?)');
+  let imported = 0;
+  const tx = db.transaction(() => {
+    for (const it of items) {
+      const r = ins.run(cat.id, it.title, it.url, it.folder ? `来自：${it.folder}` : '');
+      imported += r.changes; // INSERT OR IGNORE 冲突时 changes 为 0
+    }
+  });
+  tx();
+  res.json({ code: 'OK', data: { imported, categoryId: cat.id, parsed: items.length } });
+});
+
+// ---- 导出 ----
+adminRouter.get('/export', requireAdmin, (_req, res) => {
+  const dump = {
+    exported_at: new Date().toISOString(),
+    categories: db.prepare('SELECT * FROM categories').all(),
+    links: db.prepare('SELECT * FROM links').all(),
+    spaces: db.prepare('SELECT * FROM spaces').all(),
+    widgets: db.prepare('SELECT * FROM widgets').all(),
+    settings: db.prepare('SELECT * FROM settings').all(),
+  };
+  res.setHeader('Content-Disposition', 'attachment; filename=navsite-export.json');
+  res.json(dump);
+});
+
+// ---- 导入（配置包恢复）----
+// 模式 full=清空后重建（危险，需 confirm:true）；merge=按 URL 去重追加链接、空间跳过重名
+adminRouter.post('/import', requireAdmin, (req, res) => {
+  const dump = req.body?.dump;
+  const mode = req.body?.mode === 'full' ? 'full' : 'merge';
+  if (!dump || typeof dump !== 'object') return res.status(400).json({ code: 'INVALID', message: '需要 dump 对象' });
+  if (mode === 'full' && req.body?.confirm !== true) return res.status(400).json({ code: 'CONFIRM_REQUIRED', message: 'full 模式需 confirm:true' });
+  if (mode === 'full' && req.body?.confirm_text !== 'REPLACE ALL DATA') {
+    return res.status(400).json({ code: 'CONFIRM_REQUIRED', message: 'full 模式需 confirm_text="REPLACE ALL DATA"' });
+  }
+
+  const stats = { categories: 0, links: 0, linksSkipped: 0, spaces: 0, spacesSkipped: 0, settings: 0 };
+  const tx = db.transaction(() => {
+    if (mode === 'full') {
+      db.prepare('DELETE FROM links').run();
+      db.prepare('DELETE FROM categories').run();
+      db.prepare('DELETE FROM spaces').run();
+      db.prepare('DELETE FROM widgets').run();
+      db.prepare('DELETE FROM settings').run();
+    }
+    // 分类
+    const insCat = db.prepare('INSERT INTO categories (name, icon, sort_order, is_visible) VALUES (?, ?, ?, COALESCE(?, 1))');
+    const catIdMap = new Map<number, number>();
+    for (const c of dump.categories || []) {
+      const r = insCat.run(c.name, c.icon ?? '', c.sort_order ?? 0, c.is_visible ?? 1);
+      catIdMap.set(c.id, Number(r.lastInsertRowid));
+      stats.categories++;
+    }
+    // 链接（merge 按 URL 去重；full 直接灌）
+    const insLink = db.prepare('INSERT INTO links (category_id, title, url, description, icon_url, sort_order, is_visible, clicks) VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, 1), COALESCE(?, 0))');
+    const exists = db.prepare('SELECT 1 FROM links WHERE url = ?');
+    for (const l of dump.links || []) {
+      if (mode === 'merge' && exists.get(l.url)) { stats.linksSkipped++; continue; }
+      insLink.run(catIdMap.get(l.category_id) ?? l.category_id ?? null, l.title, l.url, l.description ?? null, l.icon_url ?? null, l.sort_order ?? 0, l.is_visible ?? 1, l.clicks ?? 0);
+      stats.links++;
+    }
+    // 空间（merge 跳过重名）
+    const insSpace = db.prepare('INSERT INTO spaces (name, icon, layout_json, theme_json, switch_rule, sort_order) VALUES (?, ?, ?, ?, ?, ?)');
+    const spaceExists = db.prepare('SELECT 1 FROM spaces WHERE name = ?');
+    for (const s of dump.spaces || []) {
+      let layout = s.layout_json;
+      try { if (typeof layout === 'string') JSON.parse(layout); else layout = JSON.stringify(layout); } catch { layout = '[]'; }
+      if (mode === 'merge' && spaceExists.get(s.name)) { stats.spacesSkipped++; continue; }
+      insSpace.run(s.name, s.icon ?? '🏠', layout, s.theme_json ?? '{}', s.switch_rule ?? '{"mode":"manual"}', s.sort_order ?? 0);
+      stats.spaces++;
+    }
+    // 设置
+    const insSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    for (const s of dump.settings || []) {
+      if (!s.key) continue;
+      insSetting.run(s.key, s.value);
+      stats.settings++;
+    }
+  });
+  tx();
+  res.json({ code: 'OK', data: { mode, ...stats } });
+});
