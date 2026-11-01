@@ -148,6 +148,10 @@ adminRouter.post('/automation/test', requireAdmin, (req, res) => {
 app.use('/admin', requirePageLogin);
 app.use('/admin', express.static(path.join(__dirname, '../public')));
 
+// 布局编辑器（同样有登录门槛）
+app.use('/editor', requirePageLogin);
+app.use('/editor', express.static(path.join(__dirname, '../public'), { index: 'editor.html' }));
+
 // 生产模式：托管前端构建产物
 const distDir = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(distDir));

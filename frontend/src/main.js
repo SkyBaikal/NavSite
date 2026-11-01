@@ -1,4 +1,4 @@
-import { createApp, ref, onMounted, onUnmounted, computed } from 'vue';
+import { createApp, ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { handleEasterEgg } from './eastereggs.js';
 
 // ===== 主题引擎：Design Tokens → CSS Variables =====
@@ -1217,6 +1217,9 @@ const CmdPalette = {
       cmds.push({ icon: '🎨', label: '打开主题编辑器', act: () => window.open('/admin/editor.html') });
       cmds.push({ icon: '⚙️', label: '打开管理后台', act: () => window.open('/admin/admin.html') });
       cmds.push({ icon: '≡', label: '切换布局密度（紧凑/舒适）', act: () => document.getElementById('densityToggle')?.click() });
+      if (window.__navsite) {
+        cmds.push({ icon: '🎯', label: (window.__navsite.focusMode ? '退出' : '进入') + '专注模式', act: () => { const fm = window.__navsite.__focusRef; if (fm) fm.value = !fm.value; } });
+      }
       cmds.push({ icon: '🌊', label: (window.__navsite?.liveWall?.on ? '关闭' : '开启') + '动态壁纸（省电）', act: () => window.__navsite?.liveWall?.toggle() });
       // 快速添加：add 标题 网址
       const ql = q.value.trim();
@@ -1252,6 +1255,11 @@ const CmdPalette = {
           (dt.links || []).slice(0, 6).forEach(l => cmds.push({ icon: '🔗', label: `${l.title}　${l.category || ''}`, act: () => window.open(l.url, '_blank') }));
           (dt.notes || []).slice(0, 4).forEach(n => cmds.push({ icon: '📝', label: `[${n.widget || '内容'}] ${String(n.text || '').slice(0, 40)}`, act: null }));
         }).catch(() => {});
+      }
+            // 快捷别名直达：输入 gh → ⚡
+      if (/^[a-z0-9_-]{1,32}$/i.test(low)) {
+        const al = links.value.find(l => (l.alias || '').toLowerCase() === low);
+        if (al) cmds.unshift({ icon: '⚡', label: `别名直达：「${al.alias}」 ${al.title}`, act: () => window.open(al.url, '_blank') });
       }
       const linkHits = links.value.filter(l => !low || l.title.toLowerCase().includes(low) || (l.description || '').toLowerCase().includes(low)).slice(0, 8);
       for (const l of linkHits) cmds.push({ icon: '🔗', label: l.title + '　' + (l.description || ''), act: () => window.open(l.url, '_blank') });
@@ -1335,6 +1343,8 @@ const App = {
     const theme = ref({});
 
     const readonly = ref(false); // 分享只读模式
+    const focusMode = ref(false); // 专注模式
+    watch(focusMode, v => { if (window.__navsite) { window.__navsite.focusMode = v; window.__navsite.__focusRef = focusMode; } document.body.classList.toggle('focus-mode', v); });
     const spaceDir = ref('none'); // 切换方向：left/right/none
     async function loadSpace(sid) {
       const prev = currentSpace.value;
@@ -1463,7 +1473,7 @@ const App = {
       return { comp: registry[w.type]?.component, props: { widget: w, category: cat } };
     }
 
-    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly };
+    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly, focusMode };
   },
   template: `
     <div class="app">
@@ -1481,6 +1491,7 @@ const App = {
         </template>
       </main>
       <div class="loading" v-else>加载中…</div>
+      <button class="focus-btn" :class="{ on: focusMode }" @click="focusMode = !focusMode" :title="focusMode ? '退出专注模式' : '专注模式'">🎯</button>
       <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a></footer>
       <footer class="foot" v-else>👁 只读分享页 · 由 NavSite 生成</footer>
       <cmd-palette />

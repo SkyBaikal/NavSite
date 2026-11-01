@@ -118,13 +118,13 @@ publicRouter.get('/links', (req, res) => {
   const kw = String(req.query.kw || '').trim();
   if (!kw) {
     // 无关键词：返回全部可见链接（供命令面板等使用）
-    const all = db.prepare('SELECT id, category_id, title, url, description, icon_url FROM links WHERE is_visible = 1 LIMIT 200').all();
+    const all = db.prepare('SELECT id, category_id, title, url, description, icon_url, alias FROM links WHERE is_visible = 1 LIMIT 200').all();
     return res.json({ code: 'OK', data: all });
   }
   const like = `%${kw}%`;
   const rows = db.prepare(
-    'SELECT id, category_id, title, url, description, icon_url FROM links WHERE is_visible = 1 AND (title LIKE ? OR description LIKE ? OR url LIKE ?) LIMIT 50'
-  ).all(like, like, like);
+    'SELECT id, category_id, title, url, description, icon_url, alias FROM links WHERE is_visible = 1 AND (title LIKE ? OR description LIKE ? OR url LIKE ? OR alias LIKE ?) LIMIT 50'
+  ).all(like, like, like, like);
   res.json({ code: 'OK', data: rows });
 });
 
