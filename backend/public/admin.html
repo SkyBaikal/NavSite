@@ -227,6 +227,7 @@
       <div class="row" style="margin-top:8px">
         <button class="btn" onclick="saveAppearance()">💾 保存外观</button>
         <button class="btn ghost" onclick="loadAppearance()">重载</button>
+        <button class="btn ghost" id="hfBtn" onclick="toggleHotFloat()">🔥 常用上浮：?</button>
         <span class="msg grow" id="apMsg"></span>
       </div>
     </section>
@@ -301,6 +302,11 @@
       <div style="margin-top:14px"><b style="font-size:13px">事件分布（最近 500 条）</b><div id="eventDist" style="margin-top:8px;font-size:12px;color:var(--muted)"></div></div>
       <div style="margin-top:14px"><b style="font-size:13px">🕐 最近事件</b><div id="recentEvents" style="margin-top:8px;font-size:12px"></div></div>
     </section>
+
+    <section id="sec-insights">
+      <h2>📈 数据洞察 <button class="btn ghost sm" onclick="loadInsights()" style="margin-left:auto">刷新</button></h2>
+      <div id="insBody" style="font-size:13px">加载中…</div>
+    </section>
   </div>
 
 <script>
@@ -326,7 +332,7 @@ async function doLogin() {
 async function buildSideNav() {
   const nav = document.createElement('div');
   nav.id = 'sideNav';
-  const items = [['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计']];
+  const items = [['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察']];
   nav.innerHTML = items.map(([id,label]) => { const el = document.getElementById(id); return el ? `<a href="#${id}" data-t="${id}">${label}</a>` : ''; }).join('');
   document.body.appendChild(nav);
   const links = nav.querySelectorAll('a');
@@ -338,7 +344,7 @@ async function buildSideNav() {
 }
 async function doLogout() { await api('/api/admin/logout', { method: 'POST' }); showLogin(); }
 function showLogin() { $('loginBox').style.display = 'block'; $('mainBox').style.display = 'none'; }
-function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); }
+function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); loadHotFloatState(); loadInsights(); }
 
 let cats = [], links = [];
 async function loadAll() {
@@ -572,6 +578,42 @@ api('/api/admin/me').then(me => { $('whoami').textContent = me.user; showMain();
 
 // ---- 自动备份 ----
 const WTYPES = { searchbar:'🔍 搜索框', clock:'🕐 时钟', category:'📁 分类', hitokoto:'💬 一言', quicknote:'📝 速记便签', habit:'🔥 习惯打卡', rss:'📰 RSS', weather:'🌤️ 天气', dailyshot:'🖼️ 每日一图', countdown:'⏳ 倒计时', recent:'🕒 最近访问', quote:'✒️ 句子收藏' };
+async function toggleHotFloat() {
+  const st = await api('/api/admin/settings');
+  const cur = (st.data || []).find(s => s.key === 'hotFloat')?.value;
+  const next = cur === 'off' ? 'on' : 'off';
+  await api('/api/admin/settings', { method: 'PUT', json: { entries: [{ key: 'hotFloat', value: next }] } });
+  flash(next === 'on' ? '🔥 常用上浮已开启（按点击频率排序）' : '常用上浮已关闭（恢复手动排序）');
+  loadAppearance();
+}
+async function loadInsights() {
+  const el = document.getElementById('insBody');
+  try {
+    const d = await api('/api/admin/insights');
+    const { top, trend, hours, recent, totalClicks, activeLinks } = d;
+    const maxT = Math.max(...trend.map(x => x.n), 1);
+    const trendBar = trend.length ? trend.map(x => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px"><div style="width:70%;height:${Math.max(4, x.n / maxT * 46)}px;background:linear-gradient(180deg,#2dd4bf,rgba(45,212,191,.3));border-radius:3px 3px 0 0;box-shadow:0 0 8px rgba(45,212,191,.3)" title="${x.day}: ${x.n} 次"></div><span style="font-size:10px;color:var(--muted)">${x.day.slice(5)}</span></div>`).join('') : '<span style="color:var(--muted)">近 7 天暂无点击</span>';
+    const topRows = top.length ? top.map((t, i) => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="color:var(--accent);font-weight:700;width:20px">${i + 1}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</span><span style="color:var(--muted);font-size:12px">${t.category || ''}</span><span style="color:#2dd4bf;font-weight:700">${t.clicks}</span></div>`).join('') : '<span style="color:var(--muted)">还没有点击记录</span>';
+    const peak = hours.length ? hours.reduce((a, b) => b.n > a.n ? b : a) : null;
+    el.innerHTML = `
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="background:var(--accent-soft);border-radius:10px;padding:10px 16px"><div style="font-size:22px;font-weight:700;color:#2dd4bf">${totalClicks}</div><div style="font-size:11px;color:var(--muted)">累计点击</div></div>
+        <div style="background:var(--accent-soft);border-radius:10px;padding:10px 16px"><div style="font-size:22px;font-weight:700;color:#2dd4bf">${activeLinks}</div><div style="font-size:11px;color:var(--muted)">用过的链接</div></div>
+        ${peak ? `<div style="background:var(--accent-soft);border-radius:10px;padding:10px 16px"><div style="font-size:22px;font-weight:700;color:#2dd4bf">${peak.h}:00</div><div style="font-size:11px;color:var(--muted)">最活跃时段</div></div>` : ''}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">📈 近 7 天趋势</div>
+      <div style="display:flex;align-items:flex-end;gap:6px;height:64px;margin-bottom:16px">${trendBar}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">🏆 访问 TOP10</div>
+      ${topRows}
+      <div style="font-size:12px;color:var(--muted);margin:14px 0 6px">🕐 最近点击</div>
+      ${recent.map(r2 => `<div style="display:flex;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--muted)">${(r2.at || '').slice(11, 16)}</span><span>${esc(r2.title)}</span></div>`).join('') || '<span style="color:var(--muted)">暂无</span>'}`;
+  } catch (e) { el.textContent = '❌ ' + e.message; }
+}
+async function loadHotFloatState() {
+  try { const st = await api('/api/admin/settings'); const cur = (st.data || []).find(s => s.key === 'hotFloat')?.value;
+    document.getElementById('hfBtn').textContent = '🔥 常用上浮：' + (cur === 'off' ? '关' : '开');
+  } catch {}
+}
 async function loadAppearance() {
   try {
     const d = await api('/api/admin/appearance');

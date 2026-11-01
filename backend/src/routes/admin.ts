@@ -126,6 +126,19 @@ adminRouter.post('/viewers', requireAdmin, (req, res) => {
     throw e;
   }
 });
+// ===== 数据洞察仪表盘 =====
+adminRouter.get('/insights', requireAdmin, (_req, res) => {
+  const top = db.prepare(`SELECT l.title, l.url, l.clicks, c.name AS category FROM links l LEFT JOIN categories c ON l.category_id = c.id WHERE l.clicks > 0 ORDER BY l.clicks DESC LIMIT 10`).all();
+  const trend = db.prepare(`SELECT date(created_at) AS day, count(*) AS n FROM events_log WHERE type = 'link.click' AND created_at >= datetime('now', '-7 days') GROUP BY date(created_at) ORDER BY day`).all();
+  const hours = db.prepare(`SELECT strftime('%H', created_at) AS h, count(*) AS n FROM events_log WHERE type = 'link.click' AND created_at >= datetime('now', '-30 days') GROUP BY h ORDER BY h`).all();
+  const recent = db.prepare(`SELECT payload_json, created_at FROM events_log WHERE type = 'link.click' ORDER BY id DESC LIMIT 8`).all().map((r: any) => {
+    try { const p = JSON.parse(r.payload_json); const l = db.prepare('SELECT title FROM links WHERE id = ?').get(p.linkId) as any; return { title: l?.title || `#${p.linkId}`, at: r.created_at }; } catch { return null; }
+  }).filter(Boolean);
+  const totalClicks = db.prepare('SELECT count(*) AS n FROM events_log WHERE type = \'link.click\'').get() as any;
+  const activeLinks = db.prepare('SELECT count(DISTINCT payload_json) AS n FROM events_log WHERE type = \'link.click\'').get() as any;
+  res.json({ code: 'OK', data: { top, trend, hours, recent, totalClicks: totalClicks?.n || 0, activeLinks: activeLinks?.n || 0 } });
+});
+
 // ===== 两步验证（TOTP）=====
 adminRouter.get('/2fa/status', requireAdmin, (_req, res) => {
   const s = db.prepare("SELECT value FROM settings WHERE key = 'twofa.secret'").get() as any;

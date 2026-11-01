@@ -861,7 +861,64 @@ function mountThemeToggle() {
   document.body.appendChild(btn);
 }
 // 模块级直接挂载（onMounted 仅限组件 setup 内）
-// 本地艺术壁纸：按日期轮换 /art/wallpapers/ 六张
+// 开机 HUD 启动序列
+  (function boot() {
+    if (sessionStorage.getItem('ns.booted')) return;
+    sessionStorage.setItem('ns.booted', '1');
+    const d = document.createElement('div');
+    d.id = 'bootScreen';
+    d.innerHTML = '<div style="text-align:center"><div class="boot-logo">NAV·SITE</div><div class="boot-line"></div><div class="boot-sub">SYSTEM READY</div></div>';
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 1500);
+  })();
+  // 提醒引擎：倒计时临近 + RSS 新文章（每 10 分钟）
+  setInterval(async () => {
+    try {
+      const cd = await fetch('/api/countdowns').then(r => r.json());
+      for (const c of (cd.data || [])) {
+        if (!c.date) continue;
+        const diff = (new Date(c.date) - new Date()) / 3600000;
+        const key = 'ns.remind.' + (c.id || c.title);
+        if (diff > 0 && diff < 24 && localStorage.getItem(key) !== 'd1') {
+          showToast(`⏳ 倒计时「${c.title}」不足 24 小时！`);
+          localStorage.setItem(key, 'd1');
+        }
+      }
+      // RSS 新文章（首个 feed 对比顶条目）
+      const rssW = (await fetch('/api/spaces').then(r => r.json())).data?.[0];
+      const lay = typeof rssW?.layout_json === 'string' ? JSON.parse(rssW.layout_json) : rssW?.layout_json || [];
+      const rssItem = lay.find(w => w.type === 'rss');
+      if (rssItem?.props?.feed) {
+        const fd = await fetch(`/api/rss?url=${encodeURIComponent(rssItem.props.feed)}`).then(r => r.json());
+        const firstTitle = fd.data?.items?.[0]?.title;
+        if (firstTitle) {
+          const rk = 'ns.rss.last';
+          const prev = localStorage.getItem(rk);
+          if (prev && prev !== firstTitle) showToast(`📰 RSS 有新文章：${firstTitle.slice(0, 24)}…`);
+          localStorage.setItem(rk, firstTitle);
+        }
+      }
+    } catch {}
+  }, 600000);
+  // 智能空间切换：switch_rule {mode:'schedule',start:'09:00',end:'18:00'} 每分钟检查
+  setInterval(() => {
+    try {
+      const list = spaces.value || [];
+      const now = new Date();
+      const cur = now.getHours() * 60 + now.getMinutes();
+      for (const s of list) {
+        let rule = s.switch_rule;
+        if (typeof rule === 'string') { try { rule = JSON.parse(rule); } catch {} }
+        if (!rule || rule.mode !== 'schedule' || !rule.start || !rule.end) continue;
+        const [sh, sm] = String(rule.start).split(':').map(Number);
+        const [eh, em] = String(rule.end).split(':').map(Number);
+        const a = sh * 60 + sm, b = eh * 60 + em;
+        const inRange = a <= b ? (cur >= a && cur < b) : (cur >= a || cur < b);
+        if (inRange && currentSpace.value !== s.id) { loadSpace(s.id); showToast(`⏰ 已按时段切换到「${s.name}」`); break; }
+      }
+    } catch {}
+  }, 60000);
+  // 本地艺术壁纸：按日期轮换 /art/wallpapers/ 六张
   (function setWallpaper() {
     const walls = ['obsidian','violet','abyss','ember','polar','rose'];
     const day = Math.floor(Date.now() / 86400000);
@@ -1011,6 +1068,14 @@ const CmdPalette = {
         });
       }
       const low = ql.toLowerCase();
+      // 全局内容搜索（B 端点）：链接标题 + 待办/速记/句子，debounce 太复杂——命令面板展开时按需查
+      if (low.length >= 2) {
+        fetch('/api/search?q=' + encodeURIComponent(low)).then(r => r.json()).then(d => {
+          const dt = (d.data) || {};
+          (dt.links || []).slice(0, 6).forEach(l => cmds.push({ icon: '🔗', label: `${l.title}　${l.category || ''}`, act: () => window.open(l.url, '_blank') }));
+          (dt.notes || []).slice(0, 4).forEach(n => cmds.push({ icon: '📝', label: `[${n.widget || '内容'}] ${String(n.text || '').slice(0, 40)}`, act: null }));
+        }).catch(() => {});
+      }
       const linkHits = links.value.filter(l => !low || l.title.toLowerCase().includes(low) || (l.description || '').toLowerCase().includes(low)).slice(0, 8);
       for (const l of linkHits) cmds.push({ icon: '🔗', label: l.title + '　' + (l.description || ''), act: () => window.open(l.url, '_blank') });
       return cmds;
@@ -1588,6 +1653,31 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
 
 /* ===== 移动端页脚防撞 ===== */
 @media (max-width: 640px) { footer { padding-right: 64px; } }
+
+/* ===== 开机 HUD 启动序列（每次进入 0.9s，sessionStorage 只放一次/会话太严——改每次刷新都放轻量版） ===== */
+#bootScreen {
+  position: fixed; inset: 0; z-index: 999; background: #0b0e14;
+  display: grid; place-items: center; flex-direction: column;
+  animation: bootOut .4s ease 0.9s forwards; pointer-events: none;
+}
+#bootScreen .boot-logo {
+  font-size: 30px; font-weight: 800; letter-spacing: .3em; color: #2dd4bf;
+  text-shadow: 0 0 24px rgba(45,212,191,.6);
+  animation: bootIn .5s ease both;
+  font-family: 'NavSerif', serif;
+}
+#bootScreen .boot-line {
+  width: 0; height: 2px; margin-top: 14px; background: linear-gradient(90deg, transparent, #2dd4bf, transparent);
+  box-shadow: 0 0 12px rgba(45,212,191,.5);
+  animation: bootLine .7s ease .15s both;
+}
+#bootScreen .boot-sub {
+  margin-top: 10px; font-size: 11px; letter-spacing: .4em; color: rgba(139,147,167,.7);
+  animation: bootIn .5s ease .35s both;
+}
+@keyframes bootIn { from { opacity: 0; transform: scale(.92); } }
+@keyframes bootLine { from { width: 0; } to { width: 180px; } }
+@keyframes bootOut { to { opacity: 0; visibility: hidden; } }
 /* ===== 视觉九轮·科技感 HUD ===== */
 /* 1. 全屏科技网格（极淡，与壁纸共存） */
 .app::before {

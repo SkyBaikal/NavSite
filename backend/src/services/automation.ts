@@ -73,12 +73,27 @@ function executeAction(db: Database.Database, then: Rule['then'], payload: Recor
         globalThis.__spaceEvents?.emit('widgets_changed', hidden);
       }
       return true;
-    case 'notify':
+case 'toast':
       // 站内通知：写 events_log，前台 SSE notify 事件弹出 Toast
       db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('action.notify', ?)")
         .run(JSON.stringify({ message: String(p.message || '').slice(0, 200), level: p.level || 'info' }));
-      globalThis.__spaceEvents?.emit('notify', { message: p.message, level: p.level || 'info' });
       return true;
+        case 'notify':
+      // 通用手机推送：支持 Bark(iOS)/Server酱(微信) —— params: {channel:'bark'|'ftqq', key, title, body}
+      {
+        const channel = String(p.channel || 'bark');
+        const title = encodeURIComponent(String(p.title || 'NavSite 通知'));
+        const body = encodeURIComponent(String(p.body || JSON.stringify(payload)).slice(0, 200));
+        const key = String(p.key || '');
+        let url = '';
+        if (channel === 'bark' && key) url = `https://api.day.app/${key}/${title}/${body}`;
+        else if (channel === 'ftqq' && key) url = `https://sctapi.ftqq.com/${key}.send?title=${title}&desp=${body}`;
+        if (!url || !isSafeExternalUrl(url)) return false;
+        fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) })
+          .then(r => { db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('action.notify', ?)").run(JSON.stringify({ channel, status: r.status })); return r.status < 300; })
+          .catch(() => { db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('action.notify.error', ?)").run(JSON.stringify({ channel })); return false; });
+        return true;
+      }
     case 'webhook':
       // 外呼 Webhook：fire-and-forget POST（5s 超时，失败仅记日志）
       {
@@ -111,6 +126,7 @@ export const ACTIONS = [
   { action: 'toggle_widget', label: '显示/隐藏 Widget', params: ['widgetType', 'hidden'] },
   { action: 'notify', label: '站内通知', params: ['message', 'level'] },
   { action: 'webhook', label: 'Webhook (https)', params: ['url'] },
+  { action: 'notify', label: '📱 手机推送 (Bark/Server酱)', params: ['channel', 'key', 'title', 'body'] },
 ];
 export const EVENTS = [
   { event: 'link.click', label: '链接被点击' },

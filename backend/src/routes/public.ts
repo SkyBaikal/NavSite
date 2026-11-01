@@ -74,8 +74,8 @@ publicRouter.get('/appearance', (_req, res) => {
 // 分类+链接（前台可见的）
 publicRouter.get('/categories', (_req, res) => {
   const cats = db.prepare('SELECT id, name, icon, sort_order FROM categories WHERE is_visible = 1 ORDER BY sort_order').all() as any[];
-  const linkStmt = db.prepare('SELECT id, category_id, title, url, description, icon_url, clicks FROM links WHERE is_visible = 1 AND category_id = ? ORDER BY sort_order');
-  for (const c of cats) c.links = linkStmt.all(c.id);
+  const linkStmt = db.prepare('SELECT id, category_id, title, url, description, icon_url, clicks FROM links WHERE is_visible = 1 AND category_id = ? ORDER BY CASE WHEN (SELECT value FROM settings WHERE key = ?) = ? THEN sort_order ELSE -clicks END, sort_order');
+  for (const c of cats) c.links = linkStmt.all(c.id, 'hotFloat', 'off');
   res.json({ code: 'OK', data: cats });
 });
 
@@ -101,6 +101,29 @@ publicRouter.post('/links/:id/click', (req, res) => {
     .run(JSON.stringify({ linkId: Number(req.params.id) }));
   fireEvent(db, 'link.click', { linkId: Number(req.params.id) }); // 触发联动规则
   res.json({ code: 'OK' });
+});
+
+// ---- 全局内容搜索（链接+待办+速记+句子）----
+publicRouter.get('/search', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q || q.length > 64) return res.json({ code: 'OK', data: { links: [], notes: [] } });
+  const like = `%${q.replace(/[%_]/g, '')}%`;
+  const links = db.prepare(`SELECT l.id, l.title, l.url, c.name AS category FROM links l LEFT JOIN categories c ON l.category_id = c.id WHERE l.is_visible = 1 AND (l.title LIKE ? OR l.url LIKE ? OR l.description LIKE ?) LIMIT 8`).all(like, like, like);
+  let notes: any[] = [];
+  try {
+    const rows = db.prepare(`SELECT widget_id, key, value FROM user_state WHERE value LIKE ? LIMIT 20`).all(like);
+    for (const r of rows) {
+      try {
+        const v = JSON.parse(r.value);
+        const texts: string[] = [];
+        const walk = (o: any) => { if (typeof o === 'string' && o.length < 200) texts.push(o); else if (Array.isArray(o)) o.forEach(walk); else if (o && typeof o === 'object') Object.values(o).forEach(walk); };
+        walk(v);
+        for (const t of texts) if (t.toLowerCase().includes(q.toLowerCase())) notes.push({ widget: r.widget_id, text: t.slice(0, 80) });
+        if (notes.length >= 6) break;
+      } catch {}
+    }
+  } catch {}
+  res.json({ code: 'OK', data: { links, notes: notes.slice(0, 6) } });
 });
 
 // ---- 亮暗主题一键切换（写当前空间 theme_json 并 SSE 广播）----

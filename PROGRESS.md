@@ -100,3 +100,20 @@
 - [x] 🖼️ Widget 背景图功能（2026-11-01，用户"widget 支持设置背景图更有趣"）：**水印确认**：生成图为纯程序绘制像素，无任何文字/logo 水印。**editor**：openCommonProps 新增「背景图片」输入（URL 手填或内置六图下拉快选）→ 存 layout item props.bg；**前台**：widget :style 拼接 background-image=linear-gradient(rgba(13,17,26,.45/.60) 暗化)+url(props.bg)+cover；坑：玻璃规则 background 简写 !important 覆盖内联 background-image→改 background-color 分属性。E2E：habit=abyss/pomodoro=ember 实渲染，琥珀暖调透出与普通卡对比鲜明、可读 ✅
 - [x] 🛰️ 视觉九轮·HUD 科技感（2026-11-01，用户"更炫酷更有科技感"）：①全屏极淡 teal 网格（radial mask 渐隐，与壁纸共存）②HUD 四角括号（hover 亮起+drop-shadow 辉光）③全息光扫（hover 斜光 0.8s 掠过）④标题 letter-spacing .12em+teal 微光+色点辉光 ⑤时钟上下刻度虚线（repeating-linear-gradient）⑥按钮/加号斜切角 clip-path（科幻面板风）⑦搜索框底部 teal 扫描线。hud 截图验收：霓虹时钟+网格+发光顶条效果出众 ✅
 - [x] 🚀 v3.1 收官四连（2026-11-01，用户"1-2-3-4"）：**①git**=init+.gitignore(排除 data/db/dist/node_modules)+v3.0 全量提交+tag；**②真实使用**=交棒用户（数据现状 3 分类 5 链接）；**③硬功能**=移动端 390px 终检（零溢出，三段截图全正常，修页脚 padding 64px）+**2FA TOTP**（零依赖手写 RFC 6238 totp.ts：b32decode+HMAC-SHA1+±1 窗漂移；登录集成 TOTP_REQUIRED/TOTP_INVALID；端点 setup/enable/disable（关也需验证码）；admin 🔑 板块 UI；E2E 全流程 enable→无码 401→错码 401→对码 OK→disable→恢复，测试后已关闭）+HTTPS Caddy 指引入 README+书签导入实测（61 条去重导入 60；500 条 0.01s，压测数据已清）；**④锦上添花**=命令面板模糊搜索升级（子序列匹配+紧凑度评分排序）+Docker 镜像重建（sudo docker，0a7e205a7f7c）+README 功能总览终稿；git v3.1 tag。坑：①同文件 kernel 重复执行 patch 注入两次→外科修复时 j<i 误删 18K 字符→从文件内残余完整副本恢复+node --check 语法校验 ②doLogin/doLogout/changePass async 丢失（历史遗留） ③admin.html 与 editor.html 功能边界：布局编辑函数在 editor
+
+
+## 🚀 v3.2 智能化超大批量（2026-11-01）
+
+用户点选 1/2/3/4/5/6/7/9/10 九项，全部落地：
+
+1. **📊 数据洞察仪表盘** — `GET /api/admin/insights`（累计点击/用过链接/最活跃时段/近 7 天趋势柱状/访问 TOP10/最近点击），后台新增「📈 数据洞察」板块（侧导航"洞察"项）。坑：api() 返回已是 data 层，勿再取 d.data。
+2. **🔥 常用上浮** — 分类链接按 clicks 降序（settings.hotFloat 开关，默认 on；关闭恢复 sort_order）。坑：settings 无该 key 时子查询 NULL 恒 false→必须 INSERT 种子行；SQL 曾双写 "ORDER BY ORDER BY"。
+3. **🔍 全局内容搜索** — `GET /api/search?q=`（链接标题/URL/描述 + user_state 待办/速记/句子 JSON 递归 LIKE），命令面板输入≥2 字符即追加命中结果（🔗链接可跳转 / 📝内容展示）。
+4. **🧭 智能空间切换** — 空间 switch_rule 支持 `{mode:'schedule', start:'09:00', end:'18:00'}`，前台每分钟检查自动切换（手动模式不动）。
+5. **⏰ 提醒引擎** — 前台每 10 分钟检查：倒计时 <24h toast（localStorage 去重）；RSS 顶条目标题变化 toast（localStorage 存上次头条）。
+6. **🖱️ 自由摆放** — editor 网格卡片 HTML5 拖拽换位（dragstart/dragover/drop + splice 持久化 layout）。
+7. **📘 Widget SDK 文档** — `docs/WIDGET_SDK.md`（manifest 结构/沙箱 postMessage 能力表/最小示例/安装调试/上架规范）。
+9. **📱 Bot/手机推送** — automation 新增 `notify` action：Bark(iOS `api.day.app`) / Server酱(`sctapi.ftqq.com`) GET 推送，SSRF 校验+events_log 记录（action.notify）；原站内 toast 改名 `toast` action。E2E：假 key 打通 Bark 真实返回 400（端到端 HTTP 走通）。
+10. **🎬 开机 HUD 启动序列** — 每会话一次 0.9s：NAV·SITE 发光 logo+扫描线+SYSTEM READY→淡出（sessionStorage 去重）。
+
+**排障记录**：insights 板块 `d.data` 多层解构+async 缺失双错→`const {...} = d` + async 修复；自动化 notify 与站内 toast 同名 case 冲突（旧 case 先拦截）→改名区分。
