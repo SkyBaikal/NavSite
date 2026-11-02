@@ -22,7 +22,7 @@
     body::after { width:48vw; height:48vw; right:-14vw; bottom:-16vw; background:radial-gradient(circle, rgba(124,92,246,.22), transparent 65%); animation:blob2 32s ease-in-out infinite alternate; }
     @keyframes blob1 { to { transform:translate(9vw,7vh) scale(1.15); } }
     @keyframes blob2 { to { transform:translate(-8vw,-6vh) scale(1.1); } }
-    .container { max-width:1040px; margin:0 auto; padding:28px 18px 90px; position:relative; z-index:1; }
+    .container { max-width:1060px; margin:0 auto 0 200px; padding:28px 18px 90px; position:relative; z-index:1; }
     header { display:flex; justify-content:space-between; align-items:center; padding-bottom:18px; margin-bottom:26px; position:relative; }
     header::after { content:''; position:absolute; left:0; right:0; bottom:0; height:1px; background:linear-gradient(90deg,transparent,rgba(45,212,191,.5) 15%,rgba(124,92,246,.5) 85%,transparent); }
     h1 { font-size:21px; font-weight:700; letter-spacing:.04em;
@@ -98,19 +98,36 @@
   
     /* 侧边导航 */
     #sideNav {
-      position: fixed; right: 14px; top: 50%; transform: translateY(-50%);
+      position: fixed; left: 0; top: 0; bottom: 0; width: 172px; transform: none;
       display: flex; flex-direction: column; gap: 2px; z-index: 90;
-      background: rgba(255,255,255,.045); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      border: 1px solid var(--line); border-radius: 12px; padding: 8px 6px;
+      background: rgba(10,14,22,.82); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-right: 1px solid var(--line); border-radius: 0; padding: 14px 10px;
+      overflow-y: auto;
     }
+    #sideNav .nav-brand { font-size: 15px; font-weight: 700; padding: 6px 10px 14px; letter-spacing: .06em; color: var(--ink); border-bottom: 1px solid var(--line); margin-bottom: 10px; }
     #sideNav a {
-      display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 7px;
-      color: var(--muted); text-decoration: none; font-size: 12px; white-space: nowrap;
-      transition: all .15s ease; border-left: 2px solid transparent;
+      display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px;
+      color: var(--muted); text-decoration: none; font-size: 13.5px; white-space: nowrap;
+      transition: all .15s ease; border-left: 3px solid transparent;
     }
     #sideNav a:hover { color: var(--accent); background: var(--accent-soft); }
     #sideNav a.on { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); text-shadow: 0 0 10px rgba(45,212,191,.5); }
-    @media (max-width: 1180px) { #sideNav { display: none; } }
+    @media (max-width: 1180px) {
+      #sideNav { left: auto; right: 0; top: auto; bottom: 0; width: 100%; height: 54px; flex-direction: row; padding: 6px; overflow-x: auto; border-right: 0; border-top: 1px solid var(--line); }
+      #sideNav .nav-brand { display: none; }
+      .container { margin-left: 0 !important; margin-bottom: 60px; }
+    }
+    table tbody tr:nth-child(even) { background: rgba(255,255,255,.025); }
+    table tbody tr { transition: background .12s; }
+    table tbody tr:hover { background: var(--accent-soft); }
+    section > h2 { font-size: 19px; padding: 10px 14px; border-left: 4px solid var(--accent); background: linear-gradient(90deg, rgba(45,212,191,.08), transparent 70%); border-radius: 0 10px 10px 0; margin-bottom: 14px; letter-spacing: .04em; }
+    .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .dash-card { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+    .dash-card .num { font-size: 26px; font-weight: 800; color: var(--accent); text-shadow: 0 0 14px rgba(45,212,191,.4); }
+    .dash-card .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    #evList { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }
+    #evList li { padding: 5px 0; border-bottom: 1px dashed var(--line); color: var(--muted); display: flex; gap: 8px; }
+    #evList li b { color: var(--ink); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -131,6 +148,15 @@
       <div><span id="whoami" style="font-size:13px;color:var(--muted);margin-right:12px"></span>
       <button class="btn ghost sm" onclick="doLogout()">退出</button></div>
     </header>
+
+    <section id="sec-dash">
+      <h2>🏠 仪表盘</h2>
+      <div class="dash-grid" id="dashGrid"></div>
+      <div class="dash-card" style="margin-bottom:14px">
+        <div class="lbl" style="margin-bottom:8px">🕓 最近操作</div>
+        <ul id="evList"></ul>
+      </div>
+    </section>
 
     <section id="sec-market">
       <h2>🧩 Widget 市场</h2>
@@ -345,11 +371,36 @@ async function doLogin() {
     showMsg('liMsg', e.message, false);
   }
 }
-async function buildSideNav() {
+async function loadDash() {
+  try {
+    const [st, evs] = await Promise.all([api('/api/admin/stats'), api('/api/admin/notes')]);
+    const s = st || {};
+    const t = s.totals || {};
+    let noteCount = '—';
+    try { const n = evs; noteCount = (Array.isArray(n) ? n.length : (n.notes ? n.notes.length : '—')); } catch (_) {}
+    const cards = [
+      ['📁', t.categories ?? '—', '分类'],
+      ['🔗', t.links ?? '—', '链接'],
+      ['👆', t.totalClicks ?? '—', '累计点击'],
+      ['📝', noteCount, '笔记'],
+      ['🧾', t.events ?? '—', '事件数'],
+      ['💾', t.dbBytes ? (t.dbBytes / 1024).toFixed(0) + ' KB' : '—', '数据库体积'],
+    ];
+    $('dashGrid').innerHTML = cards.map(([ic, num, lbl]) => `<div class="dash-card"><div class="num">${esc(String(num))}</div><div class="lbl">${ic} ${lbl}</div></div>`).join('');
+    const list = s.recentEvents || [];
+    $('evList').innerHTML = list.length ? list.slice(0, 10).map(e => {
+      let detail = '';
+      try { const p = JSON.parse(e.payload_json || '{}'); detail = p.title || p.name || p.key || p.url || ''; } catch (_) {}
+      return `<li><span>${new Date(e.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span><b>${esc(e.type)}</b><span>${esc(String(detail)).slice(0, 50)}</span></li>`;
+    }).join('') : '<li>暂无事件</li>';
+  } catch (e) { $('dashGrid').innerHTML = '<div class="dash-card"><div class="lbl">加载失败：' + esc(String(e.message || e)) + '</div></div>'; }
+}
+
+function buildSideNav() {
   const nav = document.createElement('div');
   nav.id = 'sideNav';
-  const items = [['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察'],['sec-packs','🎁 商店']];
-  nav.innerHTML = items.map(([id,label]) => { const el = document.getElementById(id); return el ? `<a href="#${id}" data-t="${id}">${label}</a>` : ''; }).join('');
+  const items = [['sec-dash','🏠 仪表盘'],['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察'],['sec-packs','🎁 商店']];
+  nav.innerHTML = '<div class="nav-brand">🧭 NavSite</div>' + items.map(([id,label]) => { const el = document.getElementById(id); return el ? `<a href="#${id}" data-t="${id}">${label}</a>` : ''; }).join('');
   document.body.appendChild(nav);
   const links = nav.querySelectorAll('a');
   links.forEach(a => a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.t)?.scrollIntoView({behavior:'smooth', block:'start'}); });
@@ -360,7 +411,7 @@ async function buildSideNav() {
 }
 async function doLogout() { await api('/api/admin/logout', { method: 'POST' }); showLogin(); }
 function showLogin() { $('loginBox').style.display = 'block'; $('mainBox').style.display = 'none'; }
-function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); loadHotFloatState(); loadInsights(); loadPacks(); }
+function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); loadHotFloatState(); loadInsights(); loadPacks(); loadDash(); }
 
 let cats = [], links = [];
 async function loadAll() {
