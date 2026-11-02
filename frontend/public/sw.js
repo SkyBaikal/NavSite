@@ -3,8 +3,8 @@
 //   - 应用外壳（/、构建产物、图标）：cache-first + 后台更新（stale-while-revalidate）
 //   - /api/*：network-first，失败回退缓存（GET），POST 永不缓存
 //   - 上游代理（/api/rss /api/weather /api/dailyshot /api/image /api/favicon）：服务端本就有缓存兜底，SW 再挡一层断网
-const SHELL_CACHE = 'navsite-shell-v1';
-const API_CACHE = 'navsite-api-v1';
+const SHELL_CACHE = 'navsite-shell-v2';
+const API_CACHE = 'navsite-api-v2';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon.svg'])));
@@ -24,6 +24,8 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return; // POST/登录等永不拦截
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+  // 后台/编辑器页永不经 SW（登录流程依赖最新版）
+  if (url.pathname.startsWith('/admin') || url.pathname.startsWith('/editor')) return;
 
   // API：network-first，失败读缓存
   if (url.pathname.startsWith('/api/')) {
