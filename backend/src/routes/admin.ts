@@ -167,6 +167,22 @@ function syncNoteLinks(noteId: number, body: string) {
     }
   }
 }
+// ---- 入站 webhook token 管理 ----
+function ensureHookToken(): string {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'hooks_token'").get() as any;
+  if (row?.value) return String(row.value);
+  const t = crypto.randomBytes(16).toString('hex');
+  db.prepare("INSERT INTO settings (key, value) VALUES ('hooks_token', ?)").run(t);
+  return t;
+}
+adminRouter.get('/hooks/token', requireAdmin, (_req, res) => {
+  res.json({ code: 'OK', data: { token: ensureHookToken(), example: `curl -X POST <你的域名>/api/hooks/<token> -H 'Content-Type: application/json' -d '{"text":"随手记一句","action":"note"}'` } });
+});
+adminRouter.post('/hooks/rotate', requireAdmin, (_req, res) => {
+  db.prepare("DELETE FROM settings WHERE key = 'hooks_token'").run();
+  res.json({ code: 'OK', data: { token: ensureHookToken() } });
+});
+
 adminRouter.get('/notes', requireAdmin, (_req, res) => {
   const rows = db.prepare('SELECT id, title, tags, is_public, public_slug, length(body) AS size, created_at, updated_at FROM notes ORDER BY updated_at DESC').all();
   res.json({ code: 'OK', data: rows });

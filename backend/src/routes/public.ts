@@ -71,6 +71,50 @@ publicRouter.get('/appearance', (_req, res) => {
   } });
 });
 
+// ---- 入站 Webhook（手机快捷指令 / IFTTT / 脚本）----
+// POST /api/hooks/:token  body: { text, action?: 'note'|'todo'|'link', title?, url? }
+function getHookToken(): string {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'hooks_token'").get() as any;
+  if (row?.value) return row.value;
+  const t = require('crypto').randomBytes(16).toString('hex');
+  db.prepare("INSERT INTO settings (key, value) VALUES ('hooks_token', ?)").run(t);
+  return t;
+}
+publicRouter.post('/hooks/:token', (req, res) => {
+  const expected = (db.prepare("SELECT value FROM settings WHERE key = 'hooks_token'").get() as any)?.value;
+  if (!expected || req.params.token !== expected) return res.status(401).json({ code: 'INVALID_TOKEN' });
+  const { text, action } = req.body || {};
+  const t = String(text || '').trim().slice(0, 500);
+  if (!t) return res.status(400).json({ code: 'INVALID', message: '需要 text' });
+  const act = action === 'todo' || action === 'link' ? action : 'note';
+  const now = Date.now();
+  try {
+    if (act === 'note') {
+      const row = db.prepare("SELECT value_json FROM user_state WHERE widget_id = 'w11' AND key = 'note'").get() as any;
+      const prev = row?.value_json ? String(row.value_json) : '';
+      const stamp = new Date(now).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const next = prev ? prev + '\n' + `[${stamp}] ${t}` : `[${stamp}] ${t}`;
+      db.prepare("INSERT INTO user_state (widget_id, key, value_json) VALUES ('w11', 'note', ?) ON CONFLICT(widget_id, key) DO UPDATE SET value_json = excluded.value_json").run(next.slice(-20000));
+    } else if (act === 'todo') {
+      const row = db.prepare("SELECT value_json FROM user_state WHERE widget_id = 'w15' AND key = 'todos'").get() as any;
+      let arr: any[] = [];
+      try { arr = JSON.parse(row?.value_json || '[]'); } catch {}
+      arr.push({ id: 'hk' + now.toString(36), text: t, done: false, at: now });
+      db.prepare("INSERT INTO user_state (widget_id, key, value_json) VALUES ('w15', 'todos', ?) ON CONFLICT(widget_id, key) DO UPDATE SET value_json = excluded.value_json").run(JSON.stringify(arr.slice(-500)));
+    } else {
+      const u = String((req.body || {}).url || '').trim();
+      if (!/^https?:\/\/[\w.-]+/.test(u)) return res.status(400).json({ code: 'INVALID', message: 'link 需要合法 url' });
+      const cat = (db.prepare('SELECT id FROM categories ORDER BY sort_order LIMIT 1').get() as any)?.id;
+      const max = (db.prepare('SELECT COALESCE(MAX(sort_order),0) m FROM links WHERE category_id = ?').get(cat) as any).m;
+      db.prepare('INSERT INTO links (category_id, title, url, sort_order) VALUES (?, ?, ?, ?)').run(cat, t.slice(0, 100), u, max + 1);
+    }
+    db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('hook.inbound', ?)").run(JSON.stringify({ action: act, text: t.slice(0, 100) }));
+    res.json({ code: 'OK', action: act });
+  } catch (e: any) {
+    res.status(500).json({ code: 'ERROR', message: e.message });
+  }
+});
+
 // ---- 速记流转：快速加链接 ----
 publicRouter.post('/quick-link', (req, res) => {
   const { title, url, category_id } = req.body || {};
