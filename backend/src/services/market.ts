@@ -43,6 +43,34 @@ const REGISTRY: any[] = [
     id: 'dailyshot', name: '每日一图', icon: '🖼️', version: '1.0.0',
     desc: 'Bing 每日壁纸 + 本地代理缓存 + 渐变字幕', author: 'navsite-core', builtin: true,
   },
+  {
+    id: 'countdown', name: '倒计时', icon: '⏳', version: '1.1.0',
+    desc: '重要日期倒数（天/小时级），最近优先 + 时间舱视图', author: 'navsite-core', builtin: true,
+  },
+  {
+    id: 'recent', name: '最近访问', icon: '🕒', version: '1.0.0',
+    desc: '最近点过的链接 chips，点击行为自动记录', author: 'navsite-core', builtin: true,
+  },
+  {
+    id: 'quote', name: '句子收藏', icon: '✒️', version: '1.0.0',
+    desc: '收藏你自己的句子，随机轮播，双击删除', author: 'navsite-core', builtin: true,
+  },
+  {
+    id: 'todo', name: '待办清单', icon: '✅', version: '1.1.0',
+    desc: '全部/进行/完成三态，支持速记 #todo 流转', author: 'navsite-core', builtin: true,
+  },
+  {
+    id: 'calendar', name: '迷你日历', icon: '📅', version: '1.0.0',
+    desc: '月历 + 农历 + 节气（cnlunar 权威表 2020-2060，纯离线）', author: 'navsite-core', builtin: true,
+  },
+  {
+    id: 'notes', name: '笔记本', icon: '📖', version: '1.0.0',
+    desc: 'Markdown 笔记 + [[双向链接]] + 标签 + 一键公开到数字花园', author: 'navsite-core', builtin: true,
+  },
+  {
+    id: 'pomodoro', name: '番茄钟', icon: '🍅', version: '1.1.0',
+    desc: '专注/休息循环 + 当日轮次记录 + 可配专注时长', author: 'navsite-core', builtin: true,
+  },
 ];
 
 // ---- manifest 校验 ----
