@@ -119,6 +119,7 @@
       <h2>🧭 NavSite 管理后台</h2>
       <div class="row"><input class="grow" id="liUser" placeholder="账号"></div>
       <div class="row"><input class="grow" id="liPass" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="row" id="liTotpRow" style="display:none"><input class="grow" id="liTotp" placeholder="6 位两步验证码" inputmode="numeric" maxlength="6"></div>
       <div class="row"><button class="btn" style="width:100%" onclick="doLogin()">登 录</button></div>
       <div class="msg" id="liMsg"></div>
     </section>
@@ -328,16 +329,21 @@ async function api(path, opts = {}) {
   if (opts.json) { opts.body = JSON.stringify(opts.json); opts.headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) }; }
   const res = await fetch(path, { ...opts, credentials: 'same-origin' });
   const data = await res.json();
-  if (res.status === 401) { showLogin(); throw new Error('请先登录'); }
+  if (res.status === 401) { showLogin(); throw new Error(data.message || '请先登录'); }
   if (data.code !== 'OK') throw new Error(data.message || data.code);
   return data.data;
 }
 
 async function doLogin() {
   try {
-    await api('/api/admin/login', { method: 'POST', json: { username: $('liUser').value, password: $('liPass').value } });
+    const body = { username: $('liUser').value, password: $('liPass').value };
+    if ($('liTotpRow').style.display !== 'none' && $('liTotp').value) body.totp = $('liTotp').value;
+    await api('/api/admin/login', { method: 'POST', json: body });
     showMain();
-  } catch (e) { showMsg('liMsg', e.message, false); }
+  } catch (e) {
+    if (e.message && e.message.includes('两步验证')) { $('liTotpRow').style.display = 'block'; $('liTotp').focus(); }
+    showMsg('liMsg', e.message, false);
+  }
 }
 async function buildSideNav() {
   const nav = document.createElement('div');
