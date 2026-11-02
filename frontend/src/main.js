@@ -1592,7 +1592,7 @@ mqPwa.addEventListener?.('change', applyPwa);
       </header>
       <main class="grid" :class="'space-in-' + spaceDir" :key="currentSpace" v-if="!loading">
         <template v-for="(w, i) in widgets" :key="i">
-          <component :is="resolveWidget(w).comp" v-bind="resolveWidget(w).props" v-if="resolveWidget(w).comp && !w.hidden" :style="[[w.w ? 'grid-column: span ' + w.w : '', w.h >= 1 ? 'grid-row: span ' + w.h + '; align-self: stretch;' : ''], w.props?.bg ? 'background-image: linear-gradient(rgba(13,17,26,.45), rgba(13,17,26,.60)), url(' + w.props.bg + '); background-size: cover; background-position: center;' : '', w.props?.css || '']"/>
+          <component :is="resolveWidget(w).comp" v-bind="resolveWidget(w).props" v-if="resolveWidget(w).comp && !w.hidden" :style="[[w.w ? 'grid-column: span ' + w.w : '', w.h >= 1 ? 'grid-row: span ' + w.h + '; align-self: stretch;' : ''], w.props?.bg ? 'background-image: linear-gradient(rgba(13,17,26,.58), rgba(13,17,26,.75)), url(' + w.props.bg + '); background-size: cover; background-position: center; background-color: #0d111a; background-blend-mode: luminosity;' : '', w.props?.css || '']"/>
         </template>
       </main>
       <div class="loading" v-else>加载中…</div>
@@ -1686,7 +1686,7 @@ body { background:var(--color-bg) !important; color:var(--color-ink); font-famil
 .clock-greet { color:var(--color-accent); font-size:15px; margin-top:4px; }
 .category { grid-column: span 12; }
 @media (min-width: 800px) { .category { grid-column: span 6; } }
-.category h2 { font-size:16px; padding:8px 0 10px; display:flex; align-items:center; gap:8px; border-bottom:2px solid var(--color-ink); margin-bottom:12px; }
+.category h2 { font-size:16px; padding:8px 0 10px; display:flex; align-items:center; gap:8px; border-bottom:0; background:linear-gradient(90deg, var(--cat-c1,#0f766e), var(--cat-c2,#34d399) 45%, transparent 95%) bottom / 100% 1.5px no-repeat; margin-bottom:12px; }
 .cicon { font-size:18px; }
 .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
 .cards.mode-list { grid-template-columns:1fr; }
@@ -1880,7 +1880,8 @@ body.focus-mode .topbar, body.focus-mode .foot { transition: opacity .4s; }
 .cd-add { background: none; border: 1px solid var(--color-line); border-radius: 8px; cursor: pointer; padding: 2px 9px; color: var(--color-muted); font-size: 14px; }
 .cd-add:hover { color: var(--color-accent); border-color: var(--color-accent); }
 .cd-empty, .rc-empty, .qt-empty { font-size: 12px; color: var(--color-muted); padding: 14px 0 10px; text-align: center; line-height: 1.9; }
-.cd-empty::before, .rc-empty::before, .qt-empty::before { display: block; font-size: 30px; opacity: .55; margin-bottom: 4px; }
+.cd-empty::before, .rc-empty::before, .qt-empty::before { display: block; font-size: 20px; opacity: .45; margin-bottom: 2px; }
+.cd-empty, .rc-empty, .qt-empty { border: 1px dashed var(--color-line); border-radius: 10px; padding: 18px 10px 12px; margin: 4px 0 6px; }
 .cd-empty::before { content: '⏳'; }
 .rc-empty::before { content: '👣'; }
 .qt-empty::before { content: '✒️'; }
@@ -1982,7 +1983,7 @@ html[data-theme="暗夜"] .toast { color: var(--color-ink); }
 .pd-rounds { color: var(--color-muted); font-size: 12px; }
 .pd-ring { position: relative; width: 130px; height: 130px; margin: 6px auto; cursor: pointer; }
 .pd-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.pd-track { fill: none; stroke: var(--color-line); stroke-width: 6; }
+.pd-track { fill: none; stroke: var(--color-line); stroke-width: 6; opacity: .45; }
 .pd-bar { fill: none; stroke: var(--color-accent); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 283; transition: stroke-dashoffset 1s linear, stroke .3s; }
 .pd-rest .pd-bar { stroke: #d97706; }
 .pd-time { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
