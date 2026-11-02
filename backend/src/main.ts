@@ -154,11 +154,14 @@ app.use('/editor', (_req, res, next) => { res.setHeader('Cache-Control', 'no-sto
 app.use('/editor', requirePageLogin);
 app.use('/editor', express.static(path.join(__dirname, '../public'), { index: 'editor.html' }));
 
+// 数字花园（公开，只读）
+app.use('/garden', express.static(path.join(__dirname, '../public-garden'), { index: 'garden.html' }));
+
 // 生产模式：托管前端构建产物
 const distDir = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(distDir));
 // SPA 兜底：非 /api 路径回 index.html
-app.get(/^\/(?!api|admin).*/, (_req, res) => {
+app.get(/^\/(?!api|admin|garden).*/, (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 

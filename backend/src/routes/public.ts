@@ -84,6 +84,27 @@ publicRouter.post('/quick-link', (req, res) => {
   res.json({ code: 'OK' });
 });
 
+// ---- 数字花园：公开笔记（只读）----
+publicRouter.get('/garden', (_req, res) => {
+  const rows = db.prepare("SELECT id, public_slug, title, tags, updated_at FROM notes WHERE is_public = 1 ORDER BY updated_at DESC").all();
+  res.json({ code: 'OK', data: rows });
+});
+publicRouter.get('/garden/:slug', (req, res) => {
+  const row = db.prepare("SELECT id, title, body, tags, updated_at FROM notes WHERE is_public = 1 AND public_slug = ?").get(String(req.params.slug)) as any;
+  if (!row) return res.status(404).json({ code: 'NOT_FOUND', message: '笔记不存在或未公开' });
+  // 反链（谁公开链接了我）
+  const backlinks = db.prepare(`
+    SELECT DISTINCT n.id, n.public_slug, n.title FROM note_links l
+    JOIN notes n ON n.id = l.source_id AND n.is_public = 1
+    WHERE l.target_id = ?`).all(row.id) as any[];
+  // 出链（我公开链接了谁）
+  const outlinks = db.prepare(`
+    SELECT DISTINCT n.id, n.public_slug, n.title FROM note_links l
+    JOIN notes n ON n.id = l.target_id AND n.is_public = 1
+    WHERE l.source_id = ?`).all(row.id) as any[];
+  res.json({ code: 'OK', data: { ...row, backlinks, outlinks } });
+});
+
 // ---- 快捷别名跳转：/a/:name → 302 ----
 publicRouter.get('/alias/:name', (req, res) => {
   const name = String(req.params.name).toLowerCase();

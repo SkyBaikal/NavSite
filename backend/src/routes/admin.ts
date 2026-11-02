@@ -149,6 +149,75 @@ adminRouter.post('/viewers', requireAdmin, (req, res) => {
 });
 // ===== 数据洞察仪表盘 =====
 // ---- 链接健康检查：并发 HEAD/GET 体检可见链接（SSRF 校验 + 8s 超时）----
+
+// ---- 数字空间：笔记 CRUD（含 [[双向链接]] 解析）----
+function slugify(title: string): string {
+  const base = title.trim().toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'note';
+  let slug = base, n = 1;
+  while (db.prepare('SELECT 1 FROM notes WHERE public_slug = ?').get(slug)) slug = `${base}-${n++}`;
+  return slug;
+}
+function syncNoteLinks(noteId: number, body: string) {
+  db.prepare('DELETE FROM note_links WHERE source_id = ?').run(noteId);
+  const titles = [...new Set([...body.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].trim()))].slice(0, 100);
+  for (const t of titles) {
+    const target = db.prepare('SELECT id FROM notes WHERE title = ?').get(t) as any;
+    if (target && target.id !== noteId) {
+      db.prepare('INSERT OR IGNORE INTO note_links (source_id, target_id) VALUES (?, ?)').run(noteId, target.id);
+    }
+  }
+}
+adminRouter.get('/notes', requireAdmin, (_req, res) => {
+  const rows = db.prepare('SELECT id, title, tags, is_public, public_slug, length(body) AS size, created_at, updated_at FROM notes ORDER BY updated_at DESC').all();
+  res.json({ code: 'OK', data: rows });
+});
+adminRouter.get('/notes/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM notes WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!row) return res.status(404).json({ code: 'NOT_FOUND' });
+  const backlinks = db.prepare('SELECT id, title, public_slug, is_public FROM notes n JOIN note_links l ON l.source_id = n.id WHERE l.target_id = ?').all(row.id);
+  const outlinks = db.prepare('SELECT id, title, public_slug, is_public FROM notes n JOIN note_links l ON l.target_id = n.id WHERE l.source_id = ?').all(row.id);
+  res.json({ code: 'OK', data: { ...row, backlinks, outlinks } });
+});
+adminRouter.post('/notes', requireAdmin, (req, res) => {
+  const { title, body, tags, is_public, space_id } = req.body || {};
+  const t = String(title || '').trim().slice(0, 120) || '无标题';
+  const sid = Number(space_id) || (db.prepare('SELECT id FROM spaces ORDER BY id LIMIT 1').get() as any)?.id;
+  if (!sid) return res.status(400).json({ code: 'INVALID', message: '无可用空间' });
+  const slug = is_public ? slugify(t) : null;
+  const info = db.prepare("INSERT INTO notes (space_id, title, body, tags, is_public, public_slug) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(sid, t, String(body || '').slice(0, 200000), String(tags || '').slice(0, 200), is_public ? 1 : 0, slug);
+  syncNoteLinks(info.lastInsertRowid as number, String(body || ''));
+  db.prepare("INSERT INTO events_log (type, payload_json) VALUES ('audit.post:/notes', ?)").run(JSON.stringify({ id: info.lastInsertRowid }));
+  res.json({ code: 'OK', data: { id: info.lastInsertRowid, slug } });
+});
+adminRouter.put('/notes/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM notes WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!row) return res.status(404).json({ code: 'NOT_FOUND' });
+  const b = req.body || {};
+  const title = b.title !== undefined ? String(b.title).trim().slice(0, 120) || '无标题' : row.title;
+  const body = b.body !== undefined ? String(b.body).slice(0, 200000) : row.body;
+  const tags = b.tags !== undefined ? String(b.tags).slice(0, 200) : row.tags;
+  let isPublic = b.is_public !== undefined ? (b.is_public ? 1 : 0) : row.is_public;
+  let slug = row.public_slug;
+  if (isPublic && !slug) slug = slugify(title);
+  if (!isPublic) slug = null;
+  db.prepare("UPDATE notes SET title = ?, body = ?, tags = ?, is_public = ?, public_slug = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(title, body, tags, isPublic, slug, row.id);
+  syncNoteLinks(row.id, body);
+  res.json({ code: 'OK', data: { slug } });
+});
+adminRouter.delete('/notes/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM note_links WHERE source_id = ? OR target_id = ?').run(Number(req.params.id), Number(req.params.id));
+  const info = db.prepare('DELETE FROM notes WHERE id = ?').run(Number(req.params.id));
+  if (!info.changes) return res.status(404).json({ code: 'NOT_FOUND' });
+  res.json({ code: 'OK' });
+});
+adminRouter.get('/notes-graph', requireAdmin, (_req, res) => {
+  const nodes = db.prepare('SELECT id, title, is_public FROM notes').all();
+  const edges = db.prepare('SELECT source_id, target_id FROM note_links').all();
+  res.json({ code: 'OK', data: { nodes, edges } });
+});
+
 adminRouter.post('/healthcheck', requireAdmin, async (_req, res) => {
   const links = db.prepare('SELECT id, title, url FROM links WHERE is_visible = 1').all() as any[];
   const CONC = 6;

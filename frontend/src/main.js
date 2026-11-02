@@ -741,6 +741,105 @@ registry.quote = {
 };
 
 
+// -- notes widget（笔记/数字花园，[[双向链接]]，本地渲染零依赖）--
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function renderNoteBody(body) {
+  // 极简 md：# 标题/列表/粗体/代码/[[链接]]/换行
+  let h = escHtml(body);
+  h = h.replace(/\[\[([^\]]+)\]\]/g, '<span class="wl" data-wl="$1">[[$1]]</span>');
+  h = h.replace(/^### (.*)$/gm, '<h4>$1</h4>');
+  h = h.replace(/^## (.*)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^# (.*)$/gm, '<h2>$1</h2>');
+  h = h.replace(/^[-*] (.*)$/gm, '<li>$1</li>');
+  h = h.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return h.replace(/\n/g, '<br>');
+}
+registry.notes = {
+  label: '📝 笔记',
+  component: {
+    props: ['widget'],
+    setup(props) {
+      const wid = props.widget?.id || 'notes';
+      const notes = ref([]);
+      const cur = ref(null);      // 当前编辑的笔记
+      const title = ref(''), body = ref(''), tags = ref('');
+      const isPublic = ref(false);
+      const search = ref('');
+      const backlinks = ref([]), outlinks = ref([]);
+      async function load() {
+        try {
+          const d = await fetch('/api/admin/notes', { credentials: 'same-origin' }).then(r => r.json());
+          notes.value = d.code === 'OK' ? d.data : [];
+        } catch {}
+      }
+      async function open(n) {
+        const d = await fetch('/api/admin/notes/' + n.id, { credentials: 'same-origin' }).then(r => r.json());
+        if (d.code !== 'OK') return;
+        cur.value = n.id; title.value = d.data.title; body.value = d.data.body;
+        tags.value = d.data.tags || ''; isPublic.value = !!d.data.is_public;
+        backlinks.value = d.data.backlinks || []; outlinks.value = d.data.outlinks || [];
+      }
+      function fresh() { cur.value = null; title.value = ''; body.value = ''; tags.value = ''; isPublic.value = false; backlinks.value = []; outlinks.value = []; }
+      async function save() {
+        const method = cur.value ? 'PUT' : 'POST';
+        const url = cur.value ? '/api/admin/notes/' + cur.value : '/api/admin/notes';
+        const d = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title.value, body: body.value, tags: tags.value, is_public: isPublic.value }) }).then(r => r.json());
+        if (d.code === 'OK') { if (!cur.value && d.data?.id) cur.value = d.data.id; await load(); }
+      }
+      async function del(n) {
+        if (!confirm('删除笔记「' + n.title + '」？')) return;
+        await fetch('/api/admin/notes/' + n.id, { method: 'DELETE', credentials: 'same-origin' });
+        if (cur.value === n.id) fresh();
+        await load();
+      }
+      const filtered = computed(() => {
+        const q = search.value.trim().toLowerCase();
+        if (!q) return notes.value;
+        return notes.value.filter(n => (n.title + ' ' + (n.tags || '')).toLowerCase().includes(q));
+      });
+      const rendered = computed(() => body.value ? renderNoteBody(body.value) : '');
+      return { notes, cur, title, body, tags, isPublic, search, backlinks, outlinks, filtered, rendered, load, open, fresh, save, del };
+    },
+    template: `
+      <div class="widget notesw">
+        <div v-if="cur === null">
+          <div class="nt-search"><input v-model="search" placeholder="🔍 搜标题/标签"></div>
+          <div class="nt-list">
+            <div v-for="n in filtered" :key="n.id" class="nt-item" @click="open(n)">
+              <span class="nt-title">{{ n.title }}</span>
+              <span v-if="n.is_public" class="nt-globe">🌐</span>
+              <span class="nt-tags">{{ n.tags }}</span>
+              <button class="nt-del" @click.stop="del(n)">✕</button>
+            </div>
+            <div v-if="!filtered.length" class="nt-empty">还没有笔记 · 写下第一篇</div>
+          </div>
+          <button class="nt-new" @click="fresh">＋ 新笔记</button>
+        </div>
+        <div v-else class="nt-edit">
+          <input v-model="title" class="nt-title" placeholder="标题">
+          <div class="nt-meta">
+            <input v-model="tags" placeholder="标签（逗号分隔）" class="nt-tags-in">
+            <label class="nt-pub"><input type="checkbox" v-model="isPublic"> 🌐 公开到花园</label>
+          </div>
+          <textarea v-model="body" class="nt-body" placeholder="写点什么… 支持 [[另一篇笔记]] 双向链接"></textarea>
+          <div v-if="rendered" class="nt-preview" v-html="rendered"></div>
+          <div class="nt-links" v-if="backlinks.length || outlinks.length">
+            <div v-if="backlinks.length">← 被引用：<span v-for="b in backlinks" :key="b.id" class="wl-chip" @click="open(b)">{{ b.title }}</span></div>
+            <div v-if="outlinks.length">→ 引用：<span v-for="o in outlinks" :key="o.id" class="wl-chip" @click="open(o)">{{ o.title }}</span></div>
+          </div>
+          <div class="nt-actions">
+            <button class="nt-save" @click="save">💾 保存</button>
+            <button class="nt-back" @click="load(); cur = null">← 返回列表</button>
+          </div>
+        </div>
+      </div>
+    `,
+  },
+};
+
 // -- calendar widget（迷你日历+农历，纯算法零外部依赖）--
 // 农历数据（2020-2060，由 cnlunar 库权威生成；bits: bit(m-1)=1 表示 30 天；CNY 春节公历锚点）
 const LUNAR_TB = {"2020":[2718,4,0],"2021":[1366,0,0],"2022":[2741,0,0],"2023":[2778,2,0],"2024":[1746,0,0],"2025":[1893,6,0],"2026":[1829,0,0],"2027":[1611,0,0],"2028":[1623,5,0],"2029":[3243,0,0],"2030":[1370,0,0],"2031":[1390,3,0],"2032":[2921,0,0],"2033":[3922,11,0],"2034":[2898,0,0],"2035":[2853,0,0],"2036":[3339,6,1],"2037":[2635,0,0],"2038":[1195,0,0],"2039":[699,5,0],"2040":[1453,0,0],"2041":[2922,0,0],"2042":[3498,2,0],"2043":[3474,0,0],"2044":[3749,7,0],"2045":[3365,0,0],"2046":[2645,0,0],"2047":[2637,5,1],"2048":[1206,0,0],"2049":[1461,0,0],"2050":[1746,3,1],"2051":[3785,0,0],"2052":[3986,8,0],"2053":[3730,0,0],"2054":[3366,0,0],"2055":[1302,6,1],"2056":[2647,0,0],"2057":[1366,0,0],"2058":[869,4,1],"2059":[1877,0,0],"2060":[1865,0,0]};
@@ -1424,6 +1523,12 @@ const App = {
         focusMode: false,
       });
       window.__navsite.sound = SoundFX;
+// PWA standalone 主屏模式检测
+const mqPwa = matchMedia('(display-mode: standalone)');
+function applyPwa() { document.body.classList.toggle('pwa-standalone', mqPwa.matches); }
+applyPwa();
+mqPwa.addEventListener?.('change', applyPwa);
+
       // 外观自定义：后台遥控（CSS/文案/搜索引擎）
       try {
         const ap = await fetch('/api/appearance').then(r => r.json());
@@ -1627,7 +1732,36 @@ body { background:var(--color-bg) !important; color:var(--color-ink); font-famil
 .minical .cal-wd { color: rgba(232,234,240,.45); font-size: 11px; }
 .minical .cal-cell { padding: 3px 0; border-radius: 6px; color: rgba(232,234,240,.8); }
 .minical .cal-cell.empty { visibility: hidden; }
+.notesw .nt-search input, .notesw .nt-title, .notesw .nt-tags-in { width: 100%; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: var(--color-ink, #e8eaf0); font-size: 13px; }
+.notesw .nt-list { margin-top: 8px; max-height: 260px; overflow-y: auto; }
+.notesw .nt-item { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 8px; cursor: pointer; transition: background .15s; }
+.notesw .nt-item:hover { background: rgba(45,212,191,.08); }
+.notesw .nt-title { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notesw .nt-globe { font-size: 11px; }
+.notesw .nt-tags { font-size: 10px; color: rgba(139,147,167,.7); max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notesw .nt-del { border: none; background: none; color: rgba(248,113,113,.5); cursor: pointer; font-size: 11px; padding: 2px; }
+.notesw .nt-del:hover { color: #f87171; }
+.notesw .nt-empty { text-align: center; padding: 26px 0; color: rgba(139,147,167,.6); font-size: 12px; }
+.notesw .nt-new { margin-top: 8px; width: 100%; padding: 6px; border-radius: 8px; border: 1px dashed rgba(45,212,191,.4); background: rgba(45,212,191,.06); color: #2dd4bf; cursor: pointer; font-size: 12px; }
+.notesw .nt-body { width: 100%; min-height: 110px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); color: var(--color-ink, #e8eaf0); font-size: 13px; resize: vertical; font-family: inherit; }
+.notesw .nt-meta { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+.notesw .nt-meta .nt-tags-in { flex: 1; }
+.notesw .nt-pub { font-size: 11px; color: rgba(139,147,167,.85); display: flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+.notesw .nt-preview { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.03); font-size: 12px; line-height: 1.65; word-break: break-word; max-height: 140px; overflow-y: auto; }
+.notesw .nt-preview .wl { color: #2dd4bf; cursor: pointer; }
+.notesw .nt-links { margin-top: 8px; font-size: 11px; color: rgba(139,147,167,.8); display: flex; flex-direction: column; gap: 4px; }
+.notesw .wl-chip { display: inline-block; margin: 0 3px; padding: 1px 8px; border-radius: 6px; background: rgba(45,212,191,.1); color: #2dd4bf; cursor: pointer; font-size: 11px; }
+.notesw .wl-chip:hover { background: rgba(45,212,191,.2); }
+.notesw .nt-actions { display: flex; gap: 8px; margin-top: 8px; }
+.notesw .nt-save { flex: 1; padding: 6px; border: none; border-radius: 8px; background: linear-gradient(135deg, #14b8a6, #0d9488); color: #04211d; font-weight: 700; cursor: pointer; }
+.notesw .nt-back { padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: none; color: rgba(139,147,167,.9); cursor: pointer; }
 .minical .cal-cell.today { background: linear-gradient(135deg, #14b8a6, #0d9488); color: #04211d; font-weight: 800; box-shadow: 0 0 10px rgba(20,184,166,.45); }
+/* PWA 主屏模式：standalone 安装后精简重排 */
+body.pwa-standalone .foot, body.pwa-standalone .topbar .clock-sub, body.pwa-standalone .hud-overlay { display: none !important; }
+body.pwa-standalone .grid { grid-template-columns: repeat(4, 1fr) !important; gap: 10px !important; padding: 10px !important; }
+body.pwa-standalone .widget { grid-column: span 4 !important; }
+body.pwa-standalone .topbar { padding: 12px 16px !important; }
+body.pwa-standalone .toast { bottom: 70px; }
 /* 专注模式：隐藏装饰只留核心 */
 body.focus-mode .topbar .clock-sub, body.focus-mode .foot, body.focus-mode .hud-overlay, body.focus-mode .focus-btn { opacity: 0; pointer-events: none; }
 body.focus-mode .topbar, body.focus-mode .foot { transition: opacity .4s; }

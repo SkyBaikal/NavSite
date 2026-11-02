@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌱 数字花园</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0b0e14; color: #e8eaf0; font-family: 'Noto Serif SC', Georgia, serif; min-height: 100vh; padding: 40px 20px; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 36px; }
+  h1 { font-size: 28px; letter-spacing: 2px; background: linear-gradient(135deg, #2dd4bf, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { color: #5a6172; font-size: 13px; margin-top: 8px; }
+  .list { display: flex; flex-direction: column; gap: 12px; }
+  .card { background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.09); border-radius: 14px; padding: 20px 24px; cursor: pointer; transition: all .25s; backdrop-filter: blur(12px); }
+  .card:hover { border-color: rgba(45,212,191,.4); transform: translateY(-2px); }
+  .card h2 { font-size: 17px; margin-bottom: 6px; }
+  .card .tags { font-size: 11px; color: #2dd4bf; }
+  .card .date { font-size: 11px; color: #5a6172; margin-left: 10px; }
+  .art { margin-top: 16px; }
+  .art h1 { font-size: 24px; margin-bottom: 18px; -webkit-text-fill-color: initial; background: none; color: #e8eaf0; }
+  .art .body { font-size: 15px; line-height: 1.9; color: #c8cdd8; word-break: break-word; }
+  .art .body h2, .art .body h3, .art .body h4 { color: #e8eaf0; margin: 18px 0 8px; }
+  .art .body code { background: rgba(255,255,255,.08); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .links { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .links a { color: #2dd4bf; text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  .back { color: #5a6172; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 16px; }
+  .back:hover { color: #2dd4bf; }
+  .empty { text-align: center; color: #5a6172; padding: 60px 0; }
+  .foot { text-align: center; color: #3d4354; font-size: 11px; margin-top: 50px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function md(s) {
+  let h = esc(s);
+  h = h.replace(/\[\[([^\]]+)\]\]/g, '<b style="color:#2dd4bf">[$1]</b>');
+  h = h.replace(/^### (.*)$/gm, '<h4>$1</h4>');
+  h = h.replace(/^## (.*)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^# (.*)$/gm, '<h2>$1</h2>');
+  h = h.replace(/^[-*] (.*)$/gm, '<li>$1</li>');
+  h = h.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return h.replace(/\n/g, '<br>');
+}
+async function route() {
+  const app = document.getElementById('app');
+  const slug = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (slug) {
+    const d = await fetch('/api/garden/' + encodeURIComponent(slug)).then(r => r.json());
+    if (d.code !== 'OK') { app.innerHTML = '<div class="empty">🌿 这篇还没长出来（不存在或未公开）</div>'; return; }
+    const n = d.data;
+    const bodyNoH1 = n.body.replace(/^#\s+[^\n]*\n?/, '');
+    app.innerHTML = `<a class="back" href="/garden.html">← 返回花园</a>
+      <div class="art"><h1>${esc(n.title)}</h1><div class="body">${md(bodyNoH1)}</div>
+      <div class="links">
+        ${n.backlinks.length ? '<div>← 被引用：<br>' + n.backlinks.map(b => `<a href="#${b.public_slug}">${esc(b.title)}</a>`).join(' · ') + '</div>' : ''}
+        ${n.outlinks.length ? '<div>→ 引用：<br>' + n.outlinks.map(o => `<a href="#${o.public_slug}">${esc(o.title)}</a>`).join(' · ') + '</div>' : ''}
+      </div></div>`;
+    document.title = n.title + ' · 数字花园';
+  } else {
+    const d = await fetch('/api/garden').then(r => r.json());
+    if (d.code !== 'OK' || !d.data.length) { app.innerHTML = '<div class="empty">🌱 花园还是空的<br><small>在后台笔记 widget 里勾「🌐 公开到花园」</small></div>'; return; }
+    app.innerHTML = `<header><h1>🌱 数字花园</h1><div class="sub">非完成态 · 持续生长 · 与自己对话</div></header>
+      <div class="list">${d.data.map(n => `<div class="card" onclick="location.hash=encodeURIComponent('${n.public_slug}')">
+        <h2>${esc(n.title)}</h2>
+        <span class="tags">${esc(n.tags || '')}</span><span class="date">${esc((n.updated_at || '').slice(0, 10))}</span>
+      </div>`).join('')}</div>`;
+    document.title = '🌱 数字花园';
+  }
+}
+window.addEventListener('hashchange', route);
+route();
+</script>
+<div class="foot">🌱 数字花园 · 由 NavSite 承载</div>
+</body>
+</html>
