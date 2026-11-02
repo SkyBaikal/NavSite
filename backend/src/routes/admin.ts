@@ -686,6 +686,85 @@ adminRouter.post('/packs/:id/apply', requireAdmin, (req, res) => {
   res.json({ code: 'OK', data: { pack: pack.id, spaceId } });
 });
 
+// ---- Obsidian 兼容全量导出（零依赖 store-zip）----
+function crc32(buf: Buffer): number {
+  let table = crcTable;
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+const crcTable = (() => {
+  const t: number[] = [];
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function zipStore(files: { name: string; data: Buffer }[]): Buffer {
+  const chunks: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const f of files) {
+    const nameBuf = Buffer.from(f.name, 'utf8');
+    const crc = crc32(f.data);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6); lh.writeUInt16LE(0, 8);
+    lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0, 12); lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(f.data.length, 18); lh.writeUInt32LE(f.data.length, 22); lh.writeUInt16LE(nameBuf.length, 26); lh.writeUInt16LE(0, 28);
+    chunks.push(lh, nameBuf, f.data);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(0, 10);
+    ch.writeUInt16LE(0, 12); ch.writeUInt16LE(0, 14); ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(f.data.length, 20); ch.writeUInt32LE(f.data.length, 24); ch.writeUInt16LE(nameBuf.length, 28);
+    ch.writeUInt32LE(0, 42); ch.writeInt32LE(offset, 42);
+    central.push(ch, nameBuf);
+    offset += lh.length + nameBuf.length + f.data.length;
+  }
+  const cdStart = offset;
+  const cd = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(files.length, 8); eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(cdStart, 16);
+  return Buffer.concat([...chunks, cd, eocd]);
+}
+const yq = (s: string) => '"' + String(s || '').replace(/"/g, '""') + '"';
+
+adminRouter.get('/export/obsidian', requireAdmin, (_req, res) => {
+  const notes = db.prepare('SELECT * FROM notes ORDER BY updated_at DESC').all() as any[];
+  const files: { name: string; data: Buffer }[] = [];
+  const usedTitles = new Set<string>();
+  for (const n of notes) {
+    let fname = (n.title || '无标题').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || '无标题';
+    let k = 2; const base = fname;
+    while (usedTitles.has(fname + '.md')) fname = `${base} ${k++}`;
+    usedTitles.add(fname + '.md');
+    const tags = String(n.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean);
+    const fm = ['---', `title: ${yq(n.title)}`, `created: ${n.created_at}`, `updated: ${n.updated_at}`,
+      `navsite-public: ${n.is_public ? 'true' : 'false'}`,
+      ...(tags.length ? [`tags: [${tags.join(', ')}]`] : []), '---', ''].join('\n');
+    files.push({ name: `Notes/${fname}.md`, data: Buffer.from(fm + n.body, 'utf8') });
+  }
+  // 待办（user_state w15 todos）
+  const todoRow = db.prepare("SELECT value_json FROM user_state WHERE widget_id = 'w15' AND key = 'todos'").get() as any;
+  if (todoRow) {
+    let todos: any[] = [];
+    try { todos = JSON.parse(todoRow.value_json); } catch {}
+    const lines = ['# 待办存档', '', ...todos.map((t: any) => `- [${t.done ? 'x' : ' '}] ${t.text} (@ ${new Date(t.at).toISOString().slice(0, 10)})`)];
+    files.push({ name: 'Tasks/todos.md', data: Buffer.from(lines.join('\n'), 'utf8') });
+  }
+  // 设置与链接快照（json）
+  const dump = {
+    exported_at: new Date().toISOString(), format: 'navsite-obsidian-bundle',
+    categories: db.prepare('SELECT * FROM categories').all(),
+    links: db.prepare('SELECT * FROM links').all(),
+    spaces: db.prepare('SELECT * FROM spaces').all(),
+    settings: db.prepare("SELECT key FROM settings WHERE key NOT LIKE '%secret%' AND key NOT LIKE '%totp%'").all(),
+  };
+  files.push({ name: 'navsite-snapshot.json', data: Buffer.from(JSON.stringify(dump, null, 2), 'utf8') });
+  const zip = zipStore(files);
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename=navsite-obsidian.zip');
+  res.send(zip);
+});
+
 adminRouter.get('/export', requireAdmin, (_req, res) => {
   const dump = {
     exported_at: new Date().toISOString(),
