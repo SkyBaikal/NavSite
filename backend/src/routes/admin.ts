@@ -771,8 +771,8 @@ adminRouter.get('/export/obsidian', requireAdmin, (_req, res) => {
     exported_at: new Date().toISOString(), format: 'navsite-obsidian-bundle',
     categories: db.prepare('SELECT * FROM categories').all(),
     links: db.prepare('SELECT * FROM links').all(),
-    spaces: db.prepare('SELECT * FROM spaces').all(),
-    settings: db.prepare("SELECT key FROM settings WHERE key NOT LIKE '%secret%' AND key NOT LIKE '%totp%'").all(),
+    spaces: db.prepare('SELECT id, name, sort_order FROM spaces').all(),
+    settings: db.prepare("SELECT key FROM settings WHERE key NOT LIKE '%secret%' AND key NOT LIKE '%totp%' AND key NOT LIKE '%token%'").all(),
   };
   files.push({ name: 'navsite-snapshot.json', data: Buffer.from(JSON.stringify(dump, null, 2), 'utf8') });
   const zip = zipStore(files);
@@ -786,9 +786,9 @@ adminRouter.get('/export', requireAdmin, (_req, res) => {
     exported_at: new Date().toISOString(),
     categories: db.prepare('SELECT * FROM categories').all(),
     links: db.prepare('SELECT * FROM links').all(),
-    spaces: db.prepare('SELECT * FROM spaces').all(),
+    spaces: db.prepare('SELECT id, name, sort_order FROM spaces').all(),
     widgets: db.prepare('SELECT * FROM widgets').all(),
-    settings: db.prepare('SELECT * FROM settings').all(),
+    settings: db.prepare("SELECT key FROM settings WHERE key NOT LIKE '%secret%' AND key NOT LIKE '%totp%' AND key NOT LIKE '%token%'").all(),
   };
   res.setHeader('Content-Disposition', 'attachment; filename=navsite-export.json');
   res.json(dump);

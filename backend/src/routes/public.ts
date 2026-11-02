@@ -80,9 +80,25 @@ function getHookToken(): string {
   db.prepare("INSERT INTO settings (key, value) VALUES ('hooks_token', ?)").run(t);
   return t;
 }
+function timingSafeStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+const hookFails = new Map<string, { n: number; until: number }>();
 publicRouter.post('/hooks/:token', (req, res) => {
+  const ip = req.ip || 'unknown';
+  const f = hookFails.get(ip);
+  if (f && f.until > Date.now()) return res.status(429).json({ code: 'RATE_LIMITED' });
   const expected = (db.prepare("SELECT value FROM settings WHERE key = 'hooks_token'").get() as any)?.value;
-  if (!expected || req.params.token !== expected) return res.status(401).json({ code: 'INVALID_TOKEN' });
+  if (!expected || !timingSafeStr(String(req.params.token), expected)) {
+    const rec = hookFails.get(ip) || { n: 0, until: 0 };
+    rec.n++;
+    if (rec.n >= 5) { rec.n = 0; rec.until = Date.now() + 600000; }
+    hookFails.set(ip, rec);
+    return res.status(401).json({ code: 'INVALID_TOKEN' });
+  }
   const { text, action } = req.body || {};
   const t = String(text || '').trim().slice(0, 500);
   if (!t) return res.status(400).json({ code: 'INVALID', message: '需要 text' });
@@ -104,6 +120,7 @@ publicRouter.post('/hooks/:token', (req, res) => {
     } else {
       const u = String((req.body || {}).url || '').trim();
       if (!/^https?:\/\/[\w.-]+/.test(u)) return res.status(400).json({ code: 'INVALID', message: 'link 需要合法 url' });
+      if (db.prepare('SELECT 1 FROM links WHERE url = ?').get(u)) return res.status(409).json({ code: 'DUPLICATE', message: '该链接已存在' });
       const cat = (db.prepare('SELECT id FROM categories ORDER BY sort_order LIMIT 1').get() as any)?.id;
       const max = (db.prepare('SELECT COALESCE(MAX(sort_order),0) m FROM links WHERE category_id = ?').get(cat) as any).m;
       db.prepare('INSERT INTO links (category_id, title, url, sort_order) VALUES (?, ?, ?, ?)').run(cat, t.slice(0, 100), u, max + 1);
