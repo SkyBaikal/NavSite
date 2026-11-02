@@ -690,8 +690,8 @@ async function faStatus() {
     document.getElementById('faDisable').style.display = on ? 'block' : 'none';
     if (!on && !document.getElementById('faSecret').value) {
       const s = await api('/api/admin/2fa/setup', { method: 'POST', json: {} });
-      document.getElementById('faSecret').value = s.data.secret;
-      document.getElementById('faSecret').title = s.data.uri;
+      document.getElementById('faSecret').value = s.secret;
+      document.getElementById('faSecret').title = s.uri;
     }
   } catch (e) { document.getElementById('faStatus').textContent = '❌ ' + e.message; }
 }
