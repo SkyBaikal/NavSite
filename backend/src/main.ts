@@ -146,7 +146,7 @@ adminRouter.post('/automation/test', requireAdmin, (req, res) => {
 // 后台静态页（Express 托管，零 CDN）
 // 后台静态页登录门槛（无效 session 只见 401 跳转页，不泄露源码）
 app.use('/admin', requirePageLogin);
-app.use('/admin', express.static(path.join(__dirname, '../public')));
+app.use('/admin', express.static(path.join(__dirname, '../public'), { index: 'admin.html' }));
 
 // 布局编辑器（同样有登录门槛）
 app.use('/editor', requirePageLogin);
