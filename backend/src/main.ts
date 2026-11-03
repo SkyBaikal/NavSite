@@ -55,6 +55,11 @@ app.use(express.json({ limit: '2mb' }));
 
 app.use('/api', publicRouter);
 
+// 登录预热/诊断端点（公开）：浏览器先 GET 一次拿 CF clearance，再 POST login，绕开 Bot Fight 对"冷 POST"的挑战
+app.get('/api/healthz', (_req, res) => {
+  res.json({ code: 'OK', source: 'navsite-origin', now: Date.now() });
+});
+
 // 外部依赖健康报告（公开，widget 用它显示"离线数据"角标）
 app.get('/api/health/upstream', (_req, res) => {
   res.json({ code: 'OK', data: upstreamReport(), now: Date.now() });

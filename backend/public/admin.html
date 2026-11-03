@@ -376,12 +376,14 @@ async function api(path, opts = {}) {
 
 async function doLogin() {
   try {
+    await fetch('/api/healthz', { credentials: 'same-origin', cache: 'no-store' }); // CF 预热
     const body = { username: $('liUser').value, password: $('liPass').value };
     if ($('liTotpRow').style.display !== 'none' && $('liTotp').value) body.totp = $('liTotp').value;
     await api('/api/admin/login', { method: 'POST', json: body });
     showMain();
   } catch (e) {
     if (e.message && e.message.includes('两步验证')) { $('liTotpRow').style.display = 'block'; $('liTotp').focus(); }
+    else if (/网络|fetch|Failed/i.test(String(e.message))) showMsg('liMsg', '可能被 Cloudflare 安全挑战拦截：请刷新页面重试；若持续失败请在 Cloudflare 面板关闭 Bot Fight Mode', false);
     showMsg('liMsg', e.message, false);
   }
 }

@@ -56,7 +56,22 @@ export function requirePageLogin(req: Request, res: Response, next: NextFunction
   <p style="margin:8px 0 16px">NavSite 后台登录</p>
   <form onsubmit="return doL()"><input id="u" placeholder="用户名" autocomplete="username"><input id="p" type="password" placeholder="密码" autocomplete="current-password"><input id="t" placeholder="两步验证码（未开启留空）" inputmode="numeric" maxlength="6" style="display:none"><button>登 录</button></form>
   <div id="msg"></div></div>
-  <script data-cfasync="false">async function doL(){const m=document.getElementById('msg');m.textContent='';try{const body={username:document.getElementById('u').value,password:document.getElementById('p').value};const t=document.getElementById('t');if(t&&t.style.display!=='none'&&t.value)body.totp=t.value;const r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(d.code==='OK'){location.reload();}else if(d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}else{m.textContent=d.message||'登录失败';}}catch(e){m.textContent='网络错误';}return false;}</script>
+  <script data-cfasync="false">async function doL(){const m=document.getElementById('msg');m.textContent='';try{
+  // 预热：先 GET 一次让 Cloudflare 下发 clearance cookie，避免冷 POST 被安全挑战拦截
+  await fetch('/api/healthz', { credentials: 'same-origin', cache: 'no-store' });
+  const body={username:document.getElementById('u').value,password:document.getElementById('p').value};const t=document.getElementById('t');if(t&&t.style.display!=='none'&&t.value)body.totp=t.value;
+  let r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok && (r.status===403||r.status===503||r.status===429)){
+    // 疑似 CF 挑战：等 1.5s 重试一次（challenge 通常已通过）
+    m.textContent='安全校验中，正在重试…';
+    await new Promise(res=>setTimeout(res,1500));
+    r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }
+  const txt=await r.text();let d;try{d=JSON.parse(txt);}catch(_){d=null;}
+  if(d&&d.code==='OK'){location.reload();}else if(d&&d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}
+  else if(!d){m.textContent='登录被安全层拦截（Cloudflare 挑战）。请刷新页面完成校验后再试，或在 Cloudflare 面板关闭 Bot Fight Mode。';}
+  else{m.textContent=d.message||'登录失败';}
+}catch(e){m.textContent='网络错误：'+(e.message||e);}return false;}</script>
   </body></html>`);
 }
 
@@ -127,7 +142,7 @@ adminRouter.post('/login', rateLimit, (req, res) => {
     }
   }
   const token = sign(JSON.stringify({ user: row.username, role, iat: Date.now() }));
-  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${MAX_AGE / 1000}`);
+  res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=${MAX_AGE / 1000}`);
   res.json({ code: 'OK', data: { user: row.username, role } });
 });
 
@@ -333,7 +348,7 @@ adminRouter.delete('/viewers/:username', requireAdmin, (req, res) => {
 });
 
 adminRouter.post('/logout', (_req, res) => {
-  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=0`);
   res.json({ code: 'OK' });
 });
 
