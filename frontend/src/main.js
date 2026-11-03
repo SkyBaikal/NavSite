@@ -494,7 +494,7 @@ registry.rss = {
           const d = await r.json();
           if (d.code === 'OK') { items.value = d.data; status.value = ''; }
           else status.value = '抓取失败';
-        } catch { status.value = '网络错误'; }
+        } catch { status.value = '数据源暂时不可达，稍后自动重试'; }
       });
       const fmtDate = (s) => {
         try {
@@ -541,14 +541,14 @@ registry.weather = {
           const d = await r.json();
           if (d.code === 'OK' && d.data) { w.value = d.data; status.value = ''; }
           else status.value = '获取失败';
-        } catch { status.value = '网络错误'; }
+        } catch { status.value = '数据源暂时不可达，稍后自动重试'; }
         upstreamStatus('wttr.in').then(s => { stale.value = s === 'stale'; });
       });
       return { w, status, stale };
     },
     template: `
       <div class="widget weather">
-        <span v-if="stale" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 离线数据</span>
+        <span v-if="stale || !w" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 暂无在线数据</span>
         <div v-if="w" class="weather-body">
           <span class="weather-icon">{{ w.icon }}</span>
           <div class="weather-main">
@@ -578,14 +578,14 @@ registry.dailyshot = {
           const d = await r.json();
           if (d.code === 'OK' && d.data) { shot.value = d.data; status.value = ''; }
           else status.value = '获取失败';
-        } catch { status.value = '网络错误'; }
+        } catch { status.value = '数据源暂时不可达，稍后自动重试'; }
         upstreamStatus('bing').then(s => { stale.value = s === 'stale'; });
       });
       return { shot, status, stale };
     },
     template: `
       <div class="widget dailyshot">
-        <span v-if="stale" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 离线数据</span>
+        <span v-if="stale || !w" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 暂无在线数据</span>
         <div v-if="shot" class="shot-wrap">
           <img :src="shot.url" alt="" loading="lazy" @load="$el && null">
           <div class="shot-cap">
@@ -769,6 +769,7 @@ registry.notes = {
       const isPublic = ref(false);
       const search = ref('');
       const backlinks = ref([]), outlinks = ref([]);
+      const err = ref('');
       async function load() {
         try {
           const d = await fetch('/api/admin/notes', { credentials: 'same-origin' }).then(r => r.json());
@@ -784,10 +785,15 @@ registry.notes = {
       }
       function fresh() { cur.value = null; title.value = ''; body.value = ''; tags.value = ''; isPublic.value = false; backlinks.value = []; outlinks.value = []; }
       async function save() {
-        const method = cur.value ? 'PUT' : 'POST';
-        const url = cur.value ? '/api/admin/notes/' + cur.value : '/api/admin/notes';
-        const d = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title.value, body: body.value, tags: tags.value, is_public: isPublic.value }) }).then(r => r.json());
-        if (d.code === 'OK') { if (!cur.value && d.data?.id) cur.value = d.data.id; await load(); }
+        if (cur.value) {
+          const d = await fetch('/api/admin/notes/' + cur.value, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title.value, body: body.value, tags: tags.value, is_public: isPublic.value }) }).then(r => r.json()).catch(() => null);
+          if (d && d.code === 'OK') { await load(); return; }
+          err.value = '编辑需要站长登录（后台已登录后可编辑）';
+          return;
+        }
+        const d = await fetch('/api/notes/quick', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title.value, body: body.value, tags: tags.value }) }).then(r => r.json()).catch(() => null);
+        if (d && d.code === 'OK') { if (d.data?.id) cur.value = d.data.id; err.value = ''; await load(); }
+        else err.value = (d && d.message) || '创建失败，请稍后重试';
       }
       async function del(n) {
         if (!confirm('删除笔记「' + n.title + '」？')) return;
@@ -801,7 +807,7 @@ registry.notes = {
         return notes.value.filter(n => (n.title + ' ' + (n.tags || '')).toLowerCase().includes(q));
       });
       const rendered = computed(() => body.value ? renderNoteBody(body.value) : '');
-      return { notes, cur, title, body, tags, isPublic, search, backlinks, outlinks, filtered, rendered, load, open, fresh, save, del };
+      return { notes, cur, title, body, tags, isPublic, search, backlinks, outlinks, filtered, rendered, err, load, open, fresh, save, del };
     },
     template: `
       <div class="widget notesw">
@@ -819,6 +825,7 @@ registry.notes = {
           <button class="nt-new" @click="fresh">＋ 新笔记</button>
         </div>
         <div v-else class="nt-edit">
+          <div v-if="err" class="nt-err" style="color:#f87171;font-size:12px;margin-bottom:6px">{{ err }}</div>
           <input v-model="title" class="nt-title" placeholder="标题">
           <div class="nt-meta">
             <input v-model="tags" placeholder="标签（逗号分隔）" class="nt-tags-in">

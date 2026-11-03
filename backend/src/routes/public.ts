@@ -1,8 +1,30 @@
 import { fireEvent } from '../services/automation.js';
 import { Router } from 'express';
 import { db } from '../database.js';
+import { syncNoteLinks } from './admin.js';
 
 export const publicRouter = Router();
+
+// 速记笔记（前台笔记 widget 用，匿名可用）：限速+截断+强制私有
+const quickFails = new Map<string, { n: number; until: number }>();
+publicRouter.post('/notes/quick', (req, res) => {
+  const ip = req.ip || 'unknown';
+  const f = quickFails.get(ip) || { n: 0, until: 0 };
+  if (f.until > Date.now()) return res.status(429).json({ code: 'RATE_LIMITED', message: '创建太频繁，请稍后再试' });
+  f.n++; if (f.n >= 10) { f.until = Date.now() + 60_000; f.n = 0; }
+  quickFails.set(ip, f);
+  const { title, body, tags } = req.body || {};
+  const t = String(title || '').trim().slice(0, 120) || '速记';
+  const b = String(body || '').slice(0, 20000);
+  if (!b.trim() && t === '速记') return res.status(400).json({ code: 'EMPTY', message: '内容不能为空' });
+  const sid = (db.prepare('SELECT id FROM spaces ORDER BY id LIMIT 1').get() as any)?.id;
+  if (!sid) return res.status(400).json({ code: 'NO_SPACE', message: '尚未创建空间' });
+  const info = db.prepare('INSERT INTO notes (space_id, title, body, tags, is_public) VALUES (?, ?, ?, ?, 0)')
+    .run(sid, t, b, String(tags || '').slice(0, 200));
+  try { syncNoteLinks(info.lastInsertRowid as number, b); } catch {}
+  fireEvent(db, 'note.quick', { title: t });
+  res.json({ code: 'OK', data: { id: info.lastInsertRowid } });
+});
 
 // 站点设置
 publicRouter.get('/site', (_req, res) => {

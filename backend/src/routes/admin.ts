@@ -205,7 +205,7 @@ function slugify(title: string): string {
   while (db.prepare('SELECT 1 FROM notes WHERE public_slug = ?').get(slug)) slug = `${base}-${n++}`;
   return slug;
 }
-function syncNoteLinks(noteId: number, body: string) {
+export function syncNoteLinks(noteId: number, body: string) {
   db.prepare('DELETE FROM note_links WHERE source_id = ?').run(noteId);
   const titles = [...new Set([...body.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].trim()))].slice(0, 100);
   for (const t of titles) {
