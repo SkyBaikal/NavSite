@@ -137,6 +137,7 @@
       <div class="row"><input class="grow" id="liUser" placeholder="账号"></div>
       <div class="row"><input class="grow" id="liPass" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="row" id="liTotpRow" style="display:none"><input class="grow" id="liTotp" placeholder="6 位两步验证码" inputmode="numeric" maxlength="6"></div>
+      <div class="row" id="liCapRow" style="display:none;align-items:center;gap:8px"><div id="liCapBox" style="cursor:pointer;flex:none" title="点击刷新" onclick="loadLiCap()"></div><input class="grow" id="liCap" placeholder="图中 4 位数字" inputmode="numeric" maxlength="4" autocomplete="off" style="width:120px"></div>
       <div class="row"><button class="btn" style="width:100%" onclick="doLogin()">登 录</button></div>
       <div class="msg" id="liMsg"></div>
     </section>
@@ -374,15 +375,25 @@ async function api(path, opts = {}) {
   return data.data;
 }
 
+let liCapToken = '';
+async function loadLiCap() {
+  try { const r = await fetch('/api/admin/captcha', { cache: 'no-store' }); const d = await r.json();
+    if (d.data && d.data.enabled) { $('liCapRow').style.display = 'flex'; $('liCapBox').innerHTML = d.data.svg; liCapToken = d.data.token; }
+    else { $('liCapRow').style.display = 'none'; liCapToken = ''; }
+  } catch (_) {}
+}
+loadLiCap();
 async function doLogin() {
   try {
     await fetch('/api/healthz', { credentials: 'same-origin', cache: 'no-store' }); // CF 预热
     const body = { username: $('liUser').value, password: $('liPass').value };
     if ($('liTotpRow').style.display !== 'none' && $('liTotp').value) body.totp = $('liTotp').value;
+    if (liCapToken) { body.captcha_token = liCapToken; body.captcha_answer = $('liCap').value; }
     await api('/api/admin/login', { method: 'POST', json: body });
     showMain();
   } catch (e) {
     if (e.message && e.message.includes('两步验证')) { $('liTotpRow').style.display = 'block'; $('liTotp').focus(); }
+    else if (e.message && e.message.includes('验证码')) loadLiCap();
     else if (/网络|fetch|Failed/i.test(String(e.message))) showMsg('liMsg', '可能被 Cloudflare 安全挑战拦截：请刷新页面重试；若持续失败请在 Cloudflare 面板关闭 Bot Fight Mode', false);
     showMsg('liMsg', e.message, false);
   }

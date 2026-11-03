@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { genSecret, verifyTotp, otpauthUri } from '../services/totp.js';
+import { generateCaptcha, verifyCaptcha, consumeCaptcha } from '../services/captcha.js';
 import crypto from 'node:crypto';
 import { db } from '../database.js';
 import { isSafeExternalUrl } from '../services/ssrf.js';
@@ -54,12 +55,16 @@ export function requirePageLogin(req: Request, res: Response, next: NextFunction
     #msg{color:#f87171;font-size:12px;min-height:16px;margin-top:8px}
   </style></head><body><div class="card"><div style="font-size:40px">🔒</div>
   <p style="margin:8px 0 16px">NavSite 后台登录</p>
-  <form onsubmit="return doL()"><input id="u" placeholder="用户名" autocomplete="username"><input id="p" type="password" placeholder="密码" autocomplete="current-password"><input id="t" placeholder="两步验证码（未开启留空）" inputmode="numeric" maxlength="6" style="display:none"><button>登 录</button></form>
+  <form onsubmit="return doL()"><input id="u" placeholder="用户名" autocomplete="username"><input id="p" type="password" placeholder="密码" autocomplete="current-password"><input id="t" placeholder="两步验证码（未开启留空）" inputmode="numeric" maxlength="6" style="display:none"><div id="capRow" style="display:none;margin:8px 0 2px"><div id="capBox" style="cursor:pointer;display:inline-block" title="点击刷新验证码" onclick="loadCap()"></div><input id="cap" placeholder="图中 4 位数字" inputmode="numeric" maxlength="4" autocomplete="off" style="width:220px"></div><button>登 录</button></form>
   <div id="msg"></div></div>
-  <script data-cfasync="false">async function doL(){const m=document.getElementById('msg');m.textContent='';try{
+  <script data-cfasync="false">let capToken='';
+async function loadCap(){try{const r=await fetch('/api/admin/captcha',{cache:'no-store'});const d=await r.json();if(d.data&&d.data.enabled){document.getElementById('capRow').style.display='block';document.getElementById('capBox').innerHTML=d.data.svg;capToken=d.data.token;}else{document.getElementById('capRow').style.display='none';capToken='';}}catch(_){}}
+loadCap();
+async function doL(){const m=document.getElementById('msg');m.textContent='';try{
   // 预热：先 GET 一次让 Cloudflare 下发 clearance cookie，避免冷 POST 被安全挑战拦截
   await fetch('/api/healthz', { credentials: 'same-origin', cache: 'no-store' });
   const body={username:document.getElementById('u').value,password:document.getElementById('p').value};const t=document.getElementById('t');if(t&&t.style.display!=='none'&&t.value)body.totp=t.value;
+  if(capToken){body.captcha_token=capToken;body.captcha_answer=document.getElementById('cap').value;}
   let r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok && (r.status===403||r.status===503||r.status===429)){
     // 疑似 CF 挑战：等 1.5s 重试一次（challenge 通常已通过）
@@ -68,9 +73,9 @@ export function requirePageLogin(req: Request, res: Response, next: NextFunction
     r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   }
   const txt=await r.text();let d;try{d=JSON.parse(txt);}catch(_){d=null;}
-  if(d&&d.code==='OK'){location.reload();}else if(d&&d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}
+  if(d&&d.code==='OK'){m.textContent='✓ 登录成功，正在进入…';setTimeout(()=>{location.href='/admin';},350);}else if(d&&d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}
   else if(!d){m.textContent='登录被安全层拦截（Cloudflare 挑战）。请刷新页面完成校验后再试，或在 Cloudflare 面板关闭 Bot Fight Mode。';}
-  else{m.textContent=d.message||'登录失败';}
+  else{m.textContent=d.message||'登录失败';if(d.code==='CAPTCHA_INVALID')loadCap();}
 }catch(e){m.textContent='网络错误：'+(e.message||e);}return false;}</script>
   </body></html>`);
 }
@@ -112,6 +117,14 @@ export function auditTrail(req: Request, res: Response, next: NextFunction) {
 }
 
 // ---- 认证 ----
+// ---- 图形验证码（登录防穷举）----
+const captchaEnabled = () => (db.prepare("SELECT value FROM settings WHERE key = 'captcha_enabled'").get() as any)?.value !== 'off';
+adminRouter.get('/captcha', rateLimit, (_req, res) => {
+  if (!captchaEnabled()) return res.json({ code: 'OK', data: { enabled: false } });
+  const ch = generateCaptcha(SECRET);
+  res.json({ code: 'OK', data: { enabled: true, svg: ch.svg, token: ch.token } });
+});
+
 adminRouter.post('/login', rateLimit, (req, res) => {
   const { username, password } = req.body || {};
   // 查询两个账号表：admin（全权）+ viewer（只读）
@@ -132,6 +145,13 @@ adminRouter.post('/login', rateLimit, (req, res) => {
     return res.status(401).json({ code: 'BAD_CREDENTIALS', message: '账号或密码错误' });
   }
   fails.delete(req.ip || 'unknown');
+  // 图形验证码（在凭据验证后、2FA 前：防穷举；TOTP_REQUIRED 时不作废 token，二次提交免重输）
+  if (captchaEnabled()) {
+    const { captcha_token, captcha_answer } = req.body || {};
+    if (!verifyCaptcha(SECRET, String(captcha_token || ''), String(captcha_answer || ''))) {
+      return res.status(401).json({ code: 'CAPTCHA_INVALID', message: '验证码错误或已过期，请刷新后重试' });
+    }
+  }
   // 2FA：admin 启用了 TOTP 则必须带有效验证码（viewer 不强制）
   if (role === 'admin') {
     const s = db.prepare("SELECT value FROM settings WHERE key = 'twofa.secret'").get() as any;
@@ -141,6 +161,7 @@ adminRouter.post('/login', rateLimit, (req, res) => {
       if (!verifyTotp(s.value, code)) return res.status(401).json({ code: 'TOTP_INVALID', message: '两步验证码错误' });
     }
   }
+  if (captchaEnabled()) consumeCaptcha(String((req.body || {}).captcha_token || ''));
   const token = sign(JSON.stringify({ user: row.username, role, iat: Date.now() }));
   res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=${MAX_AGE / 1000}`);
   res.json({ code: 'OK', data: { user: row.username, role } });
