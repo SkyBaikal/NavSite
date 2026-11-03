@@ -60,6 +60,19 @@ app.get('/api/healthz', (_req, res) => {
   res.json({ code: 'OK', source: 'navsite-origin', now: Date.now() });
 });
 
+// 会话诊断（公开）：回显浏览器是否携带会话 cookie——登录跳转 401 时定位用
+app.get('/api/whoami', (req, res) => {
+  const raw = req.headers.cookie || '';
+  res.json({
+    code: 'OK',
+    data: {
+      cookieHeaderPresent: !!raw,
+      cookieNames: raw.split(';').map(s => s.trim().split('=')[0]).filter(Boolean),
+      ua: (req.headers['user-agent'] || '').slice(0, 120),
+    },
+  });
+});
+
 // 外部依赖健康报告（公开，widget 用它显示"离线数据"角标）
 app.get('/api/health/upstream', (_req, res) => {
   res.json({ code: 'OK', data: upstreamReport(), now: Date.now() });
