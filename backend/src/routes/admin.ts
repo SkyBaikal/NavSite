@@ -73,7 +73,7 @@ async function doL(){const m=document.getElementById('msg');m.textContent='';try
     r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   }
   const txt=await r.text();let d;try{d=JSON.parse(txt);}catch(_){d=null;}
-  if(d&&d.code==='OK'){m.textContent='✓ 登录成功，正在进入…';setTimeout(()=>{location.href='/admin';},350);}else if(d&&d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}
+  if(d&&d.code==='OK'){m.textContent='✓ 登录成功，正在验证会话…';let ok=false;for(let k=0;k<5&&!ok;k++){await new Promise(res=>setTimeout(res,400));ok=(await fetch('/admin',{cache:'no-store'})).ok;}if(ok){location.href='/admin';}else{m.textContent='会话验证未通过：您的浏览器可能拦截了 Cookie（拦截模式/隐私插件/无痕+拦截第三方）。请关闭拦截后重试，或换无痕窗口测试。';}}else if(d&&d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}
   else if(!d){m.textContent='登录被安全层拦截（Cloudflare 挑战）。请刷新页面完成校验后再试，或在 Cloudflare 面板关闭 Bot Fight Mode。';}
   else{m.textContent=d.message||'登录失败';if(d.code==='CAPTCHA_INVALID')loadCap();}
 }catch(e){m.textContent='网络错误：'+(e.message||e);}return false;}</script>
