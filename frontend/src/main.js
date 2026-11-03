@@ -783,9 +783,10 @@ registry.notes = {
         tags.value = d.data.tags || ''; isPublic.value = !!d.data.is_public;
         backlinks.value = d.data.backlinks || []; outlinks.value = d.data.outlinks || [];
       }
+      function newOne() { cur.value = 'new'; title.value = ''; body.value = ''; tags.value = ''; isPublic.value = false; backlinks.value = []; outlinks.value = []; err.value = ''; }
       function fresh() { cur.value = null; title.value = ''; body.value = ''; tags.value = ''; isPublic.value = false; backlinks.value = []; outlinks.value = []; }
       async function save() {
-        if (cur.value) {
+        if (cur.value && cur.value !== 'new') {
           const d = await fetch('/api/admin/notes/' + cur.value, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title.value, body: body.value, tags: tags.value, is_public: isPublic.value }) }).then(r => r.json()).catch(() => null);
           if (d && d.code === 'OK') { await load(); return; }
           err.value = '编辑需要站长登录（后台已登录后可编辑）';
@@ -807,7 +808,7 @@ registry.notes = {
         return notes.value.filter(n => (n.title + ' ' + (n.tags || '')).toLowerCase().includes(q));
       });
       const rendered = computed(() => body.value ? renderNoteBody(body.value) : '');
-      return { notes, cur, title, body, tags, isPublic, search, backlinks, outlinks, filtered, rendered, err, load, open, fresh, save, del };
+      return { notes, cur, title, body, tags, isPublic, search, backlinks, outlinks, filtered, rendered, err, load, open, fresh, newOne, save, del };
     },
     template: `
       <div class="widget notesw">
@@ -822,7 +823,7 @@ registry.notes = {
             </div>
             <div v-if="!filtered.length" class="nt-empty">还没有笔记 · 写下第一篇</div>
           </div>
-          <button class="nt-new" @click="fresh">＋ 新笔记</button>
+          <button class="nt-new" @click="newOne">＋ 新笔记</button>
         </div>
         <div v-else class="nt-edit">
           <div v-if="err" class="nt-err" style="color:#f87171;font-size:12px;margin-bottom:6px">{{ err }}</div>
