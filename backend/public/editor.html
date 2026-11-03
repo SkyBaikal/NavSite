@@ -425,7 +425,7 @@ async function pickSpace(id) {
   curLayout = JSON.parse(curSpace.layout_json || '[]');
   curTheme = JSON.parse(curSpace.theme_json || '{}');
   $('curSpaceName').textContent = curSpace.icon + ' ' + curSpace.name;
-  renderSpaces(); renderGrid(); renderPalettes();
+  renderSpaces(); renderGrid(); renderPalettes(); renderAddBtns();
   switchTab('layout');
 }
 
