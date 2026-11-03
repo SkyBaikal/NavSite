@@ -52,6 +52,7 @@ app.use((_req, res, next) => {
 });
 
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false }));
 
 app.use('/api', publicRouter);
 

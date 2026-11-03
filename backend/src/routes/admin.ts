@@ -36,6 +36,7 @@ function rateLimit(req: Request, res: Response, next: NextFunction) {
   const ip = req.ip || 'unknown';
   const f = fails.get(ip);
   if (f && f.until > Date.now()) {
+    if ((req.body as any)?.form) return res.redirect(303, '/admin?e=rate');
     return res.status(429).json({ code: 'RATE_LIMITED', message: '尝试过多，请稍后再试' });
   }
   next();
@@ -55,28 +56,27 @@ export function requirePageLogin(req: Request, res: Response, next: NextFunction
     #msg{color:#f87171;font-size:12px;min-height:16px;margin-top:8px}
   </style></head><body><div class="card"><div style="font-size:40px">🔒</div>
   <p style="margin:8px 0 16px">NavSite 后台登录</p>
-  <form onsubmit="return doL()"><input id="u" placeholder="用户名" autocomplete="username"><input id="p" type="password" placeholder="密码" autocomplete="current-password"><input id="t" placeholder="两步验证码（未开启留空）" inputmode="numeric" maxlength="6" style="display:none"><div id="capRow" style="display:none;margin:8px 0 2px"><div id="capBox" style="cursor:pointer;display:inline-block" title="点击刷新验证码" onclick="loadCap()"></div><input id="cap" placeholder="图中 4 位数字" inputmode="numeric" maxlength="4" autocomplete="off" style="width:220px"></div><button>登 录</button></form>
+  <form method="POST" action="/api/admin/login" id="lform" onsubmit="try{sessionStorage.setItem('ns_u',document.getElementById('u').value);sessionStorage.setItem('ns_p',document.getElementById('p').value)}catch(_){}">
+    <input type="hidden" name="form" value="1">
+    <input id="u" name="username" placeholder="用户名" autocomplete="username">
+    <input id="p" type="password" name="password" placeholder="密码" autocomplete="current-password">
+    <input id="t" name="totp" placeholder="两步验证码（未开启留空）" inputmode="numeric" maxlength="6" style="display:none">
+    <div id="capRow" style="display:none;margin:8px 0 2px"><div id="capBox" style="cursor:pointer;display:inline-block" title="点击刷新验证码" onclick="loadCap()"></div><input id="cap" name="captcha_token" type="hidden"><input id="capAns" name="captcha_answer" placeholder="图中 4 位数字" inputmode="numeric" maxlength="4" autocomplete="off" style="width:220px"></div>
+    <button>登 录</button></form>
   <div id="msg"></div></div>
-  <script data-cfasync="false">let capToken='';
-async function loadCap(){try{const r=await fetch('/api/admin/captcha',{cache:'no-store'});const d=await r.json();if(d.data&&d.data.enabled){document.getElementById('capRow').style.display='block';document.getElementById('capBox').innerHTML=d.data.svg;capToken=d.data.token;}else{document.getElementById('capRow').style.display='none';capToken='';}}catch(_){}}
-loadCap();
-async function doL(){const m=document.getElementById('msg');m.textContent='';try{
-  // 预热：先 GET 一次让 Cloudflare 下发 clearance cookie，避免冷 POST 被安全挑战拦截
-  await fetch('/api/healthz', { credentials: 'same-origin', cache: 'no-store' });
-  const body={username:document.getElementById('u').value,password:document.getElementById('p').value};const t=document.getElementById('t');if(t&&t.style.display!=='none'&&t.value)body.totp=t.value;
-  if(capToken){body.captcha_token=capToken;body.captcha_answer=document.getElementById('cap').value;}
-  let r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok && (r.status===403||r.status===503||r.status===429)){
-    // 疑似 CF 挑战：等 1.5s 重试一次（challenge 通常已通过）
-    m.textContent='安全校验中，正在重试…';
-    await new Promise(res=>setTimeout(res,1500));
-    r=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  }
-  const txt=await r.text();let d;try{d=JSON.parse(txt);}catch(_){d=null;}
-  if(d&&d.code==='OK'){m.textContent='✓ 登录成功，正在验证会话…';let ok=false;for(let k=0;k<5&&!ok;k++){await new Promise(res=>setTimeout(res,400));ok=(await fetch('/admin',{cache:'no-store'})).ok;}if(ok){location.href='/admin';}else{const w=await fetch('/api/whoami',{cache:'no-store'}).then(x=>x.json()).catch(()=>null);m.textContent='会话验证未通过：服务器未收到您的会话 Cookie'+(w&&w.data?('（Cookie 头: '+(w.data.cookieHeaderPresent?('有 ['+w.data.cookieNames.join(',')+']'):'无')+'）'):'')+'。常见原因：浏览器拦截模式/隐私插件拦 Cookie、或 Cloudflare 变异了 Set-Cookie。请把 F12→Network→login 响应头截图发给开发者。';}}else if(d&&d.code==='TOTP_REQUIRED'){t.style.display='block';t.focus();m.textContent='请输入认证器中的 6 位验证码';}
-  else if(!d){m.textContent='登录被安全层拦截（Cloudflare 挑战）。请刷新页面完成校验后再试，或在 Cloudflare 面板关闭 Bot Fight Mode。';}
-  else{m.textContent=d.message||'登录失败';if(d.code==='CAPTCHA_INVALID')loadCap();}
-}catch(e){m.textContent='网络错误：'+(e.message||e);}return false;}</script>
+  <script data-cfasync="false">
+let capToken='';
+async function loadCap(){try{const r=await fetch('/api/admin/captcha',{cache:'no-store'});const d=await r.json();if(d.data&&d.data.enabled){document.getElementById('capRow').style.display='block';document.getElementById('capBox').innerHTML=d.data.svg;capToken=d.data.token;document.getElementById('cap').value=capToken;}else{document.getElementById('capRow').style.display='none';capToken='';}}catch(_){}}
+(function(){
+  const m=document.getElementById('msg');
+  const e=new URLSearchParams(location.search).get('e');
+  const msgs={totp:'请输入认证器中的 6 位两步验证码',bad:'账号或密码错误',cap:'验证码错误或已过期，已为您刷新，请重新输入',rate:'尝试过多，IP 已被锁定 10 分钟，请稍后再试'};
+  if(e&&msgs[e]){m.textContent=msgs[e];if(e!=='totp')loadCap();if(e==='totp'){const t=document.getElementById('t');t.style.display='block';t.focus();
+    try{const u=sessionStorage.getItem('ns_u');const p=sessionStorage.getItem('ns_p');if(u){document.getElementById('u').value=u;}if(p){document.getElementById('p').value=p;sessionStorage.removeItem('ns_p');sessionStorage.removeItem('ns_u');}}catch(_){}}}
+  if(!e)loadCap();
+  // 登录是原生表单导航，CF 挑战会自然呈现
+})();
+</script>
   </body></html>`);
 }
 
@@ -142,13 +142,15 @@ adminRouter.post('/login', rateLimit, (req, res) => {
     f.n++;
     if (f.n >= 5) { f.until = Date.now() + 10 * 60 * 1000; f.n = 0; }
     fails.set(ip, f);
-    return res.status(401).json({ code: 'BAD_CREDENTIALS', message: '账号或密码错误' });
+    if (req.body && req.body.form) return res.redirect(303, '/admin?e=bad');
+    res.status(401).json({ code: 'BAD_CREDENTIALS', message: '账号或密码错误' });
   }
   fails.delete(req.ip || 'unknown');
   // 图形验证码（在凭据验证后、2FA 前：防穷举；TOTP_REQUIRED 时不作废 token，二次提交免重输）
   if (captchaEnabled()) {
     const { captcha_token, captcha_answer } = req.body || {};
     if (!verifyCaptcha(SECRET, String(captcha_token || ''), String(captcha_answer || ''))) {
+      if (req.body && req.body.form) return res.redirect(303, '/admin?e=cap');
       return res.status(401).json({ code: 'CAPTCHA_INVALID', message: '验证码错误或已过期，请刷新后重试' });
     }
   }
@@ -157,13 +159,23 @@ adminRouter.post('/login', rateLimit, (req, res) => {
     const s = db.prepare("SELECT value FROM settings WHERE key = 'twofa.secret'").get() as any;
     if (s?.value) {
       const code = String((req.body || {}).totp || '').trim();
-      if (!code) return res.status(401).json({ code: 'TOTP_REQUIRED', message: '请输入两步验证码' });
-      if (!verifyTotp(s.value, code)) return res.status(401).json({ code: 'TOTP_INVALID', message: '两步验证码错误' });
+      if (!code) {
+        if (req.body && req.body.form) return res.redirect(303, '/admin?e=totp');
+        return res.status(401).json({ code: 'TOTP_REQUIRED', message: '请输入两步验证码' });
+      }
+      if (!verifyTotp(s.value, code)) {
+        if (req.body && req.body.form) return res.redirect(303, '/admin?e=totp');
+        return res.status(401).json({ code: 'TOTP_INVALID', message: '两步验证码错误' });
+      }
     }
   }
   if (captchaEnabled()) consumeCaptcha(String((req.body || {}).captcha_token || ''));
   const token = sign(JSON.stringify({ user: row.username, role, iat: Date.now() }));
   res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=${MAX_AGE / 1000}`);
+  if (req.body && req.body.form) {
+    // 传统表单登录：303 原生导航重定向——cookie 由浏览器在真实导航中种下，不依赖 XHR Set-Cookie 链路
+    return res.redirect(303, '/admin');
+  }
   res.json({ code: 'OK', data: { user: row.username, role } });
 });
 
