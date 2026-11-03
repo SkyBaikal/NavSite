@@ -7,7 +7,7 @@ import { trackedFetch } from './upstream.js';
 
 export const dailyshotRouter = Router();
 
-interface Shot { url: string; title: string; copyright: string }
+interface Shot { url: string; title: string; copyright: string; link?: string }
 let cache: { at: number; data: Shot } | null = null;
 const TTL = 6 * 3600_000; // 6小时（Bing 每日更新，留点余量）
 
@@ -24,6 +24,7 @@ dailyshotRouter.get('/dailyshot', async (_req, res) => {
       url: '/api/image?u=' + encodeURIComponent(full),
       title: img.title || '',
       copyright: (img.copyright || '').replace(/\s*\(.*?\)\s*$/, ''),
+      link: img.copyrightlink ? (img.copyrightlink.startsWith('http') ? img.copyrightlink : 'https://www.bing.com' + img.copyrightlink) : undefined,
     };
     cache = { at: Date.now(), data };
     res.json({ code: 'OK', data });

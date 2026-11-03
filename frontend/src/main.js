@@ -548,7 +548,7 @@ registry.weather = {
     },
     template: `
       <div class="widget weather">
-        <span v-if="stale || !w" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 暂无在线数据</span>
+        <span v-if="stale || !shot" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 暂无在线数据</span>
         <div v-if="w" class="weather-body">
           <span class="weather-icon">{{ w.icon }}</span>
           <div class="weather-main">
@@ -587,7 +587,9 @@ registry.dailyshot = {
       <div class="widget dailyshot">
         <span v-if="stale || !w" class="stale-badge" title="数据源暂时不可用，显示缓存数据">📴 暂无在线数据</span>
         <div v-if="shot" class="shot-wrap">
-          <img :src="shot.url" alt="" loading="lazy" @load="$el && null">
+          <a :href="shot.link || shot.url" target="_blank" rel="noopener noreferrer" class="shot-link" title="查看大图 / 图片来源">
+          <img :src="shot.url" alt="" loading="lazy">
+          </a>
           <div class="shot-cap">
             <span class="shot-title">{{ shot.title }}</span>
             <span class="shot-copy">{{ shot.copyright }}</span>
@@ -1212,7 +1214,7 @@ function mountThemeToggle() {
   window.addEventListener('scroll', () => {
     const imgs = document.querySelectorAll('.shot-wrap img');
     const y = window.scrollY;
-    imgs.forEach(img => { img.style.transform = `translateY(${Math.min(y * 0.06, 60)}px) scale(1.08)`; });
+    imgs.forEach(img => { img.style.transform = `translateY(${Math.min(y * 0.05, 24)}px) scale(1.3)`; });
   }, { passive: true });
   // 时段副语（hero 一句话）
   (function setDaypartLine() {
@@ -1818,6 +1820,7 @@ body.focus-mode .topbar, body.focus-mode .foot { transition: opacity .4s; }
 /* 每日一图 */
 .dailyshot { grid-column: span 6; }
 .shot-wrap { position: relative; border-radius: 12px; overflow: hidden; }
+.shot-link { display: block; }
 .shot-wrap img { display: block; width: 100%; height: 180px; object-fit: cover; transition: transform .5s ease; }
 .shot-wrap:hover img { transform: scale(1.04); }
 .shot-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 12px 8px; background: linear-gradient(transparent, rgba(0,0,0,.65)); color: #fff; display: flex; flex-direction: column; }
