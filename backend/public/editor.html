@@ -202,6 +202,7 @@ async function saveTheme() {
 // ---------- 布局编辑 ----------
 const WIDGET_TYPES = [
   { type: 'searchbar', label: '🔍 搜索框', defW: 12, fields: [] },
+  { type: 'archivelist', label: '🗂 文章归档', defW: 6, fields: [ { key: 'perCol', label: '每集合显示条数', type: 'number', min: 1, max: 20 } ] },
   { type: 'clock', label: '🕐 时钟', defW: 12, fields: [] },
   { type: 'category', label: '📁 分类', defW: 6, fields: [] },
   { type: 'hitokoto', label: '💬 一言', defW: 12, fields: [] },

@@ -1592,6 +1592,48 @@ mqPwa.addEventListener?.('change', applyPwa);
       return { comp: registry[w.type]?.component, props: { widget: w, category: cat } };
     }
 
+    // -- archivelist widget（文章归档）--
+    registry.archivelist = {
+      label: '文章归档',
+      component: {
+        props: ['widget'],
+        setup(props) {
+          const cols = ref([]);
+          const open = ref(props.widget?.props?.expand !== false);
+          async function load() {
+            try {
+              const d = await fetch('/api/collections').then(r => r.json());
+              const list = d.data || [];
+              const withItems = await Promise.all(list.map(async c => {
+                const dd = await fetch('/api/collections/' + c.id + '/items').then(r => r.json());
+                return { ...c, items: (dd.data || []).slice(0, (props.widget?.props?.perCol) || 5) };
+              }));
+              cols.value = withItems.filter(c => c.items.length);
+            } catch { cols.value = []; }
+          }
+          load();
+          return { cols, open };
+        },
+        template: `
+      <div class="widget archivelist">
+        <div class="rc-head" @click="open = !open" style="cursor:pointer">🗂 文章归档 <span style="opacity:.45;font-size:12px">{{ open ? '▾' : '▸' }}</span></div>
+        <template v-if="open">
+          <div v-if="!cols.length" style="opacity:.5;font-size:12.5px;padding:8px 0">暂无内容——去后台写一篇吧</div>
+          <div v-for="c in cols" :key="c.id" style="margin-bottom:10px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px">{{ c.icon }} {{ c.name }} <a :href="'/archive/' + c.id" target="_blank" style="font-size:11px;opacity:.55;margin-left:4px">全部 →</a></div>
+            <ul style="list-style:none;margin:0;padding:0">
+              <li v-for="it in c.items" :key="it.id" style="padding:3px 0;font-size:13px;display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed rgba(128,150,180,.18)">
+                <a :href="'/c/' + c.id + '/' + it.id" target="_blank" style="color:inherit;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ it.title || '（无标题）' }}</a>
+                <span style="opacity:.45;font-size:11.5px;white-space:nowrap">{{ (it._created || '').slice(5, 10) }}</span>
+              </li>
+            </ul>
+          </div>
+          <a href="/archive" target="_blank" style="font-size:12px;opacity:.6">🗂 浏览全部归档 →</a>
+        </template>
+      </div>`,
+      },
+    };
+
     const ExtWidget = {
       props: ['widget'],
       setup(props) {
@@ -1634,7 +1676,7 @@ mqPwa.addEventListener?.('change', applyPwa);
       </main>
       <div class="loading" v-else>加载中…</div>
       <button class="focus-btn" :class="{ on: focusMode }" @click="focusMode = !focusMode" :title="focusMode ? '退出专注模式' : '专注模式'">🎯</button>
-      <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a></footer>
+      <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a> · <a href="/archive" target="_blank" class="foot-link">🗂 归档</a> · <a href="/feed.xml" target="_blank" class="foot-link">📡 RSS</a></footer>
       <footer class="foot" v-else>👁 只读分享页 · 由 NavSite 生成</footer>
       <cmd-palette />
       <toast-tip />
