@@ -88,7 +88,7 @@ function validateManifest(m: any): string[] {
 }
 
 const installed = () => {
-  try { return JSON.parse(db.prepare(`SELECT value FROM settings WHERE key='installed_widgets'`).get()?.value || '[]'); }
+  try { return JSON.parse((db.prepare(`SELECT value FROM settings WHERE key='installed_widgets'`).get() as any)?.value || '[]'); }
   catch { return []; }
 };
 
@@ -153,12 +153,26 @@ marketRouter.post('/api/market/uninstall', requireAdmin, (req, res) => {
 // ---- 沙箱化第三方 widget 运行时 ----
 // 安全模型：iframe srcdoc + sandbox="allow-scripts"（无 same-origin → 拿不到 cookie/DOM/父页数据）
 //           + postMessage 白名单 API（受控的 setState/getProps/toast）
+const stateRate = new Map<string, number[]>();
 const SANDBOX_TEMPLATE = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
 <div id="root"></div>
 <script>
   const handlers = {
     setState: (v) => parent.postMessage({ __navsite: true, type: 'setState', id: __WIDGET_ID__, value: v }, '*'),
     getProps: () => __WIDGET_PROPS__,
+    getState: () => __WIDGET_STATE__,
+    // CMS 数据接口：navsite.collection('名称').list() → Promise<条目数组>
+    collection: (name) => ({
+      list: () => fetch('/api/collections/' + encodeURIComponent(String(name).slice(0,64)) + '/items').then(r => r.json()).then(d => d.code === 'OK' ? d.data : []),
+      render: (tpl) => fetch('/api/collections/' + encodeURIComponent(String(name).slice(0,64)) + '/items').then(r => r.json()).then(d => {
+        if (d.code !== 'OK') return '';
+        const items = d.data;
+        const g = (it, k) => it[k] ?? it.data?.[k] ?? '';
+        if (tpl === 'cards') return items.map(it => '<div class="ns-card"><b>' + (g(it,'title') || g(it,'name') || '条目') + '</b>' + (g(it,'desc') ? '<p>' + g(it,'desc') + '</p>' : '') + '</div>').join('');
+        if (tpl === 'list') return '<ul>' + items.map(it => '<li>' + (g(it,'title') || g(it,'name') || '条目') + (g(it,'desc') ? ' — ' + g(it,'desc') : '') + '</li>').join('') + '</ul>';
+        return '<pre>' + JSON.stringify(items, null, 2).slice(0, 4000) + '</pre>';
+      }),
+    }),
     toast: (msg) => parent.postMessage({ __navsite: true, type: 'toast', id: __WIDGET_ID__, value: String(msg).slice(0, 200) }, '*'),
   };
   window.navsite = handlers;
@@ -181,14 +195,17 @@ widgetRuntimeRouter.get('/api/widget-runtime/:id', (req, res) => {
   const inst = installed().find((i: any) => i.id === id);
   if (!inst) return res.status(404).json({ code: 'NOT_FOUND', message: 'widget 未安装' });
   if (inst.disabled) return res.status(403).json({ code: 'DISABLED', message: 'widget 已停用' });
+  let stateData: any = null;
+  try { stateData = JSON.parse((db.prepare(`SELECT value_json FROM user_state WHERE widget_id = ? AND key = 'sandbox'`).get('ext:' + id) as any)?.value_json || 'null'); } catch {}
   const code = inst.code || `root.innerHTML = '<div style="padding:16px;font-family:sans-serif">${inst.icon} ${inst.name}<br><small>${inst.desc}</small></div>';`;
   const html = SANDBOX_TEMPLATE
     .replace(/__WIDGET_ID__/g, JSON.stringify(id))
     .replace(/__WIDGET_PROPS__/g, JSON.stringify(inst.props || {}))
+    .replace(/__WIDGET_STATE__/g, JSON.stringify(stateData || null))
     .replace(/__WIDGET_CODE__/g, JSON.stringify(code));
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self'");
   res.send(html);
 });
 
@@ -208,6 +225,26 @@ widgetRuntimeRouter.post('/api/widget-runtime/:id/code', requireAdmin, (req, res
 });
 
 // widget 前台事件上报（setState 持久化 / toast）— 公开（与 widget state 一致：状态即内容）
+widgetRuntimeRouter.post('/api/widgets/:extId/state', (req, res) => {
+  // 沙箱状态持久化（匿名可写，限速+限大小）
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  if (!stateRate.has(ip)) stateRate.set(ip, []);
+  const hits = stateRate.get(ip)!.filter(t => now - t < 60000);
+  if (hits.length >= 30) return res.status(429).json({ code: 'RATE_LIMITED', message: '保存过于频繁' });
+  hits.push(now); stateRate.set(ip, hits);
+  const extId = String(req.params.extId || '').replace(/^:/, '');
+  if (!/^ext:[a-z0-9]+$/.test('ext:' + extId.replace(/^ext:/, ''))) {
+    if (!/^ext:[a-z0-9]+$/.test(extId)) return res.status(400).json({ code: 'BAD_REQUEST' });
+  }
+  if (req.body?.key !== 'sandbox') return res.status(400).json({ code: 'BAD_REQUEST', message: '仅允许 sandbox 键' });
+  const val = JSON.stringify(req.body?.value ?? null);
+  if (val.length > 4096) return res.status(400).json({ code: 'BAD_REQUEST', message: '状态过大（≤4KB）' });
+  db.prepare("INSERT INTO user_state (widget_id, key, value_json) VALUES (?, 'sandbox', ?) ON CONFLICT(widget_id, key) DO UPDATE SET value_json = excluded.value_json")
+    .run(extId, val);
+  res.json({ code: 'OK' });
+});
+
 widgetRuntimeRouter.post('/api/widget-runtime/event', (req, res) => {
   const { id, type, value } = req.body || {};
   const inst = installed().find((i: any) => i.id === id);

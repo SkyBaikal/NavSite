@@ -1585,10 +1585,37 @@ mqPwa.addEventListener?.('change', applyPwa);
 
     function resolveWidget(w) {
       const cat = categories.value.find(c => c.id === w.categoryId);
+      if (registry[w.type]?.component) return { comp: registry[w.type].component, props: { widget: w, category: cat } };
+      // 第三方/自定义 widget：iframe 沙箱渲染（父页监听 setState 持久化）
+      if (w.type && w.extId) return { comp: ExtWidget, props: { widget: w } };
+      if (w.type && !registry[w.type] && w.extId !== undefined) return { comp: ExtWidget, props: { widget: w } };
       return { comp: registry[w.type]?.component, props: { widget: w, category: cat } };
     }
 
-    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly, focusMode };
+    const ExtWidget = {
+      props: ['widget'],
+      setup(props) {
+        const loading = ref(true);
+        const frame = ref(null);
+        onMounted(() => {
+          const h = (e) => {
+            if (!e.data || !e.data.__navsite) return;
+            if (e.data.id !== props.widget.extId) return;
+            if (e.data.type === 'setState') {
+              fetch('/api/widgets/ext\:' + props.widget.extId + '/state', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'sandbox', value: e.data.value }) }).catch(() => {});
+            } else if (e.data.type === 'toast') { showToast(e.data.value); }
+          };
+          window.addEventListener('message', h);
+          onUnmounted(() => window.removeEventListener('message', h));
+          loading.value = false;
+        });
+        return { loading, frame };
+      },
+      template: `<div class="widget extw" style="padding:0">
+        <iframe v-if="!loading" :src="'/api/widget-runtime/' + widget.extId" style="width:100%;height:100%;min-height:120px;border:0;display:block" sandbox="allow-scripts" ref="frame"></iframe>
+      </div>`,
+    };
+    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, ExtWidget, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly, focusMode };
   },
   template: `
     <div class="app">

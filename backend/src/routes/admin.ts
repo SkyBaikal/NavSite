@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { fireEvent } from '../services/automation.js';
 import bcrypt from 'bcryptjs';
 import { genSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import { generateCaptcha, verifyCaptcha, consumeCaptcha } from '../services/captcha.js';
@@ -898,4 +899,106 @@ adminRouter.post('/import', requireAdmin, (req, res) => {
   });
   tx();
   res.json({ code: 'OK', data: { mode, ...stats } });
+});
+
+// ===== CMS 内容集合（管理）=====
+function colP(sql: string) { return db.prepare(sql); }
+const aCol = {
+  get list() { return colP('SELECT id, name, icon, fields_json, created_at FROM collections ORDER BY id'); },
+  get get() { return colP('SELECT * FROM collections WHERE id = ?'); },
+  get ins() { return colP('INSERT INTO collections (name, icon, fields_json) VALUES (?, ?, ?)'); },
+  get upd() { return colP('UPDATE collections SET name = ?, icon = ?, fields_json = ? WHERE id = ?'); },
+  get del() { return colP('DELETE FROM collections WHERE id = ?'); },
+  get items() { return colP('SELECT id, data_json, sort_order, created_at, updated_at FROM collection_items WHERE collection_id = ? ORDER BY sort_order, id DESC'); },
+  get item() { return colP('SELECT * FROM collection_items WHERE id = ?'); },
+  get insItem() { return colP('INSERT INTO collection_items (collection_id, data_json, sort_order) VALUES (?, ?, ?)'); },
+  get updItem() { return colP("UPDATE collection_items SET data_json = ?, sort_order = COALESCE(?, sort_order), updated_at = datetime('now') WHERE id = ?"); },
+  get delItem() { return colP('DELETE FROM collection_items WHERE id = ?'); },
+};
+function sanitizeFields(raw: any): any[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 32).map((f: any) => ({
+    key: String(f.key || '').replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '').slice(0, 32),
+    label: String(f.label || f.key || '').slice(0, 64),
+    type: ['text', 'textarea', 'number', 'url', 'date'].includes(f.type) ? f.type : 'text',
+    required: !!f.required,
+  })).filter(f => f.key);
+}
+
+adminRouter.get('/collections', requireAdmin, (_req, res) => {
+  res.json({ code: 'OK', data: (aCol.list.all() as any[]).map(r => ({ id: r.id, name: r.name, icon: r.icon, fields: JSON.parse(r.fields_json || '[]'), created_at: r.created_at })) });
+});
+adminRouter.post('/collections', requireAdmin, (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 64);
+  if (!name) return res.status(400).json({ code: 'BAD_REQUEST', message: '集合名称必填' });
+  const fields = sanitizeFields(req.body?.fields);
+  const icon = String(req.body?.icon || '📦').slice(0, 8);
+  const r = aCol.ins.run(name, icon, JSON.stringify(fields));
+  fireEvent(db, 'collection.create', { name });
+  res.json({ code: 'OK', data: { id: Number(r.lastInsertRowid), name, icon, fields } });
+});
+adminRouter.put('/collections/:id', requireAdmin, (req, res) => {
+  const col = aCol.get.get(Number(req.params.id)) as any;
+  if (!col) return res.status(404).json({ code: 'NOT_FOUND', message: '集合不存在' });
+  const name = String(req.body?.name || col.name).trim().slice(0, 64);
+  const icon = String(req.body?.icon || col.icon).slice(0, 8);
+  const fields = sanitizeFields(req.body?.fields ?? JSON.parse(col.fields_json || '[]'));
+  aCol.upd.run(name, icon, JSON.stringify(fields), col.id);
+  res.json({ code: 'OK', data: { id: col.id, name, icon, fields } });
+});
+adminRouter.delete('/collections/:id', requireAdmin, (req, res) => {
+  const col = aCol.get.get(Number(req.params.id)) as any;
+  if (!col) return res.status(404).json({ code: 'NOT_FOUND', message: '集合不存在' });
+  aCol.del.run(col.id);
+  fireEvent(db, 'collection.delete', { name: col.name });
+  res.json({ code: 'OK' });
+});
+adminRouter.get('/collections/:id/items', requireAdmin, (req, res) => {
+  const col = aCol.get.get(Number(req.params.id)) as any;
+  if (!col) return res.status(404).json({ code: 'NOT_FOUND', message: '集合不存在' });
+  res.json({ code: 'OK', data: (aCol.items.all(col.id) as any[]).map(r => ({ id: r.id, ...JSON.parse(r.data_json || '{}'), _sort: r.sort_order, _created: r.created_at })) });
+});
+adminRouter.post('/collections/:id/items', requireAdmin, (req, res) => {
+  const col = aCol.get.get(Number(req.params.id)) as any;
+  if (!col) return res.status(404).json({ code: 'NOT_FOUND', message: '集合不存在' });
+  const fields = JSON.parse(col.fields_json || '[]') as any[];
+  const data: Record<string, any> = {};
+  for (const f of fields) {
+    let v = req.body?.[f.key];
+    if (v === undefined || v === null) v = '';
+    v = String(v);
+    if (f.type === 'number') { const n = Number(v); v = isNaN(n) ? 0 : n; }
+    else if (f.type === 'url') { if (v && !/^https?:\/\//.test(v)) v = ''; }
+    if (f.required && !String(v).trim()) return res.status(400).json({ code: 'BAD_REQUEST', message: `字段「${f.label || f.key}」必填` });
+    data[f.key] = typeof v === 'number' ? v : String(v).slice(0, 20000);
+  }
+  const so = Number(req.body?._sort || 0);
+  const r = aCol.insItem.run(col.id, JSON.stringify(data), so);
+  fireEvent(db, 'collection.item.create', { collection: col.name });
+  res.json({ code: 'OK', data: { id: Number(r.lastInsertRowid), ...data } });
+});
+adminRouter.put('/collections/:id/items/:itemId', requireAdmin, (req, res) => {
+  const it = aCol.item.get(Number(req.params.itemId)) as any;
+  if (!it || it.collection_id !== Number(req.params.id)) return res.status(404).json({ code: 'NOT_FOUND', message: '条目不存在' });
+  const col = aCol.get.get(it.collection_id) as any;
+  const fields = JSON.parse(col.fields_json || '[]') as any[];
+  const old = JSON.parse(it.data_json || '{}');
+  const data: Record<string, any> = { ...old };
+  for (const f of fields) {
+    if (req.body?.[f.key] === undefined) continue;
+    let v: any = String(req.body[f.key]);
+    if (f.type === 'number') { const n = Number(v); v = isNaN(n) ? 0 : n; }
+    else if (f.type === 'url') { if (v && !/^https?:\/\//.test(v)) v = ''; }
+    if (f.required && !String(v).trim()) return res.status(400).json({ code: 'BAD_REQUEST', message: `字段「${f.label || f.key}」必填` });
+    data[f.key] = typeof v === 'number' ? v : v.slice(0, 20000);
+  }
+  const so = req.body?._sort !== undefined ? Number(req.body._sort) : null;
+  aCol.updItem.run(JSON.stringify(data), so, it.id);
+  res.json({ code: 'OK', data: { id: it.id, ...data } });
+});
+adminRouter.delete('/collections/:id/items/:itemId', requireAdmin, (req, res) => {
+  const it = aCol.item.get(Number(req.params.itemId)) as any;
+  if (!it || it.collection_id !== Number(req.params.id)) return res.status(404).json({ code: 'NOT_FOUND', message: '条目不存在' });
+  aCol.delItem.run(it.id);
+  res.json({ code: 'OK' });
 });

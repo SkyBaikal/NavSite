@@ -161,16 +161,29 @@
 
     <section id="sec-market">
       <h2>🧩 Widget 市场</h2>
-      <div class="row">
-        <textarea id="mkManifest" class="grow" rows="4" placeholder='粘贴 widget manifest JSON：{"id":"my-widget","name":"我的组件","version":"1.0.0","desc":"…","icon":"🧩"}' style="font-size:12px;font-family:monospace"></textarea>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <button class="btn" onclick="installWidget()">安装 / 更新</button>
-          <button class="btn ghost" onclick="loadMarket()">刷新目录</button>
-        </div>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input id="mkId" placeholder="组件 ID（英文，如 my-widget）" style="flex:1;min-width:140px">
+        <input id="mkName" placeholder="名称" style="flex:1;min-width:120px">
+        <input id="mkIcon" placeholder="图标 emoji" style="width:110px" value="🧩">
+        <input id="mkDesc" placeholder="一句话描述" style="flex:2;min-width:180px">
+        <button class="btn" onclick="installWidget()">安装 / 更新</button>
+        <button class="btn ghost" onclick="loadMarket()">刷新目录</button>
       </div>
       <div class="msg" id="mkMsg"></div>
       <table id="mkTable"><thead><tr><th>图标</th><th>ID</th><th>名称</th><th>版本</th><th>描述</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
     </section>
+
+    <section id="sec-cms">
+      <h2>📚 内容集合（CMS）</h2>
+      <div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <input id="cmsName" placeholder="集合名（如：书评 / 藏品 / 文章）" style="flex:1;min-width:160px">
+        <input id="cmsIcon" placeholder="图标" style="width:90px" value="📚">
+        <button class="btn" onclick="cmsCreate()">＋ 新建集合</button>
+        <button class="btn ghost" onclick="cmsLoad()">刷新</button>
+      </div>
+      <div id="cmsList"></div>
+    </section>
+
 
     <section id="sec-cats">
       <h2>📁 分类管理</h2>
@@ -426,11 +439,11 @@ async function loadDash() {
 function buildSideNav() {
   const nav = document.createElement('div');
   nav.id = 'sideNav';
-  const items = [['sec-dash','🏠 仪表盘'],['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察'],['sec-packs','🎁 商店']];
+  const items = [['sec-dash','🏠 仪表盘'],['sec-market','🧩 市场'],['sec-cms','📚 内容集合'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察'],['sec-packs','🎁 商店']];
   nav.innerHTML = '<div class="nav-brand">🧭 NavSite</div>' + items.map(([id,label]) => { const el = document.getElementById(id); return el ? `<a href="#${id}" data-t="${id}">${label}</a>` : ''; }).join('');
   document.body.appendChild(nav);
   const links = nav.querySelectorAll('a');
-  links.forEach(a => a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.t)?.scrollIntoView({behavior:'smooth', block:'start'}); });
+  links.forEach(a => a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.t)?.scrollIntoView({behavior:'smooth', block:'start'}); if (a.dataset.t === 'sec-cms') cmsLoad(); });
   const obs = new IntersectionObserver((es) => {
     es.forEach(en => { if (en.isIntersecting) { links.forEach(a => a.classList.toggle('on', a.dataset.t === en.target.id)); } });
   }, { rootMargin: '-30% 0px -60% 0px' });
@@ -963,7 +976,12 @@ async function loadMarket() {
 }
 async function installWidget() {
   try {
-    const manifest = JSON.parse($('mkManifest').value);
+    const id = $('mkId').value.trim().replace(/[^a-z0-9-]/g, '-');
+    if (!id) return showMsg('mkMsg', '✗ 组件 ID 必填（英文）');
+    const manifest = {
+      id, name: $('mkName').value.trim() || id, icon: $('mkIcon').value.trim() || '🧩',
+      version: '1.0.0', desc: $('mkDesc').value.trim(), author: '站长',
+    };
     const d = await api('/api/market/install', { method: 'POST', json: { manifest } });
     showMsg('mkMsg', `✓ 已安装 ${d.icon} ${d.name} v${d.version}`, true);
     loadMarket();
@@ -984,6 +1002,15 @@ async function uninstallWidget(id) {
   loadMarket();
 }
 async function editCode(id) {
+  const def = `// 可用：navsite.setState(v) 持久化 / navsite.getState() 读取 / navsite.getProps() / navsite.toast(msg) / navsite.collection('集合名').list() / .render('cards'|'list') / root 元素
+root.innerHTML = '<b>Hello from ${id}</b>';
+navsite.toast('widget 启动');
+// 点击计数持久化
+let n = (navsite.getState() || {}).clicks || 0;
+root.onclick = () => navsite.setState({ clicks: ++n });`;
+  openCodeModal(id, localStorage.getItem('navsite.code.' + id) || def);
+  return;
+  /* legacy */
   const code = prompt(`输入 ${id} 的运行时 JS 代码（可用 navsite.setState/getProps/toast 和 root 元素）：`,
     localStorage.getItem('navsite.code.' + id) || `root.innerHTML = '<b>Hello from ${id}</b>';
 navsite.toast('widget 启动');
@@ -1041,5 +1068,139 @@ async function importConfig() {
     </div>
   </div>
 </div>
+
+<div id="codeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;align-items:center;justify-content:center">
+  <div style="background:var(--card,#1a1f2e);border-radius:12px;padding:16px;width:min(760px,92vw);max-height:86vh;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b id="cmTitle">编辑 widget 代码</b>
+      <button class="btn ghost" onclick="closeCodeModal()">✕ 关闭</button>
+    </div>
+    <textarea id="cmCode" rows="16" spellcheck="false" style="font-family:ui-monospace,monospace;font-size:12.5px;line-height:1.55;width:100%;background:rgba(0,0,0,.25);color:#cde3f8;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:10px;tab-size:2"></textarea>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" onclick="saveCodeModal()">💾 保存代码 (Ctrl+S)</button>
+      <span class="msg" id="cmMsg" style="margin:0"></span>
+    </div>
+  </div>
+</div>
+<script>
+let _cmId = null;
+function openCodeModal(id, code) { _cmId = id; $('cmTitle').textContent = '🧩 ' + id + ' · 运行时代码'; $('cmCode').value = code; $('codeModal').style.display = 'flex'; $('cmMsg').textContent = ''; }
+function closeCodeModal() { $('codeModal').style.display = 'none'; _cmId = null; }
+async function saveCodeModal() {
+  const code = $('cmCode').value;
+  localStorage.setItem('navsite.code.' + _cmId, code);
+  try {
+    await api('/api/widget-runtime/' + _cmId + '/code', { method: 'POST', json: { code } });
+    showMsg('cmMsg', '✓ 已保存并生效', true);
+  } catch (e) { showMsg('cmMsg', '✗ ' + e.message, false); }
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's' && _cmId) { e.preventDefault(); saveCodeModal(); }
+  if (e.key === 'Escape' && _cmId) closeCodeModal();
+});
+</script>
+<script>
+// ===== CMS 内容集合 =====
+let _cmsCols = [];
+async function cmsLoad() {
+  try {
+    _cmsCols = await api('/api/admin/collections') || [];
+    const box = $('cmsList');
+    if (!_cmsCols.length) { box.innerHTML = '<div class="msg">还没有集合——新建一个（如「书评」），定义字段，然后录入内容。前台自定义 widget 用 navsite.collection(\'书评\').list() 即可读取展示。</div>'; return; }
+    box.innerHTML = _cmsCols.map(c => `
+      <div class="dash-card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <b>${c.icon} ${c.name} <span style="opacity:.55;font-size:12px">· ${c.fields.length} 字段</span></b>
+          <div style="display:flex;gap:6px">
+            <button class="btn ghost" onclick="cmsEditFields(${c.id})">⚙ 字段</button>
+            <button class="btn ghost" onclick="cmsNewItem(${c.id})">＋ 录入</button>
+            <button class="btn ghost" onclick="cmsDel(${c.id})">🗑</button>
+          </div>
+        </div>
+        <div id="cmsItems-${c.id}"><span style="opacity:.5;font-size:12px">加载中…</span></div>
+      </div>`).join('');
+    for (const c of _cmsCols) await cmsLoadItems(c);
+  } catch (e) { showMsg('mkMsg', '✗ ' + e.message, false); }
+}
+async function cmsLoadItems(c) {
+  const box = $('cmsItems-' + c.id);
+  try {
+    const items = await api('/api/admin/collections/' + c.id + '/items') || [];
+    if (!items.length) { box.innerHTML = '<div style="opacity:.5;font-size:12px">空集合，点「＋ 录入」添加第一条</div>'; return; }
+    const titleKey = c.fields[0]?.key || 'title';
+    box.innerHTML = '<table style="width:100%;font-size:12.5px">' + items.map(it =>
+      `<tr><td style="padding:4px 6px;border-top:1px solid rgba(255,255,255,.08)"><b>${esc(String(it[titleKey] ?? '（无标题）')).slice(0, 60)}</b></td>
+       <td style="border-top:1px solid rgba(255,255,255,.08);opacity:.6">${esc(String(it[c.fields[1]?.key] ?? '')).slice(0, 60)}</td>
+       <td style="border-top:1px solid rgba(255,255,255,.08);text-align:right;white-space:nowrap">
+         <button class="btn ghost" style="padding:2px 8px" onclick="cmsEditItem(${c.id},${it.id})">编辑</button>
+         <button class="btn ghost" style="padding:2px 8px" onclick="cmsDelItem(${c.id},${it.id})">删</button></td></tr>`).join('') + '</table>';
+  } catch (e) { box.innerHTML = '✗ ' + e.message; }
+}
+async function cmsCreate() {
+  const name = $('cmsName').value.trim(); if (!name) return showMsg('mkMsg', '✗ 集合名必填');
+  try {
+    await api('/api/admin/collections', { method: 'POST', json: { name, icon: $('cmsIcon').value.trim() || '📚', fields: [{ key: 'title', label: '标题', type: 'text', required: true }, { key: 'desc', label: '描述', type: 'textarea' }] } });
+    $('cmsName').value = ''; showMsg('mkMsg', '✓ 集合已创建（默认带 标题+描述 字段，可再改）', true); cmsLoad();
+  } catch (e) { showMsg('mkMsg', '✗ ' + e.message, false); }
+}
+async function cmsDel(id) {
+  const c = _cmsCols.find(x => x.id === id);
+  if (!confirm(`删除集合「${c.name}」及其全部条目？不可恢复！`)) return;
+  await api('/api/admin/collections/' + id, { method: 'DELETE' }); cmsLoad();
+}
+function fieldFormHTML(fields, data) {
+  return fields.map(f => {
+    const v = data?.[f.key] ?? '';
+    const inp = f.type === 'textarea'
+      ? `<textarea name="${f.key}" rows="4" style="width:100%">${esc(String(v))}</textarea>`
+      : `<input name="${f.key}" type="${f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}" value="${esc(String(v))}" style="width:100%">`;
+    return `<label style="display:block;margin-bottom:8px"><span style="font-size:12px;opacity:.7">${f.label || f.key}${f.required ? ' *' : ''}</span>${inp}</label>`;
+  }).join('');
+}
+function collectForm(form) {
+  const d = {}; new FormData(form).forEach((v, k) => d[k] = v); return d;
+}
+async function cmsEditFields(id) {
+  const c = _cmsCols.find(x => x.id === id);
+  const cur = c.fields.map(f => `${f.key}|${f.label}|${f.type}${f.required ? '|必填' : ''}`).join('\n');
+  const txt = prompt('字段定义（每行一个：字段名|标签|类型(text/textarea/number/url/date)[|必填]）', cur);
+  if (txt === null) return;
+  const fields = txt.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const [key, label, type, req] = l.split('|').map(s => (s || '').trim());
+    return { key, label: label || key, type: type || 'text', required: req === '必填' };
+  }).filter(f => f.key);
+  try { await api('/api/admin/collections/' + id, { method: 'PUT', json: { fields } }); showMsg('mkMsg', '✓ 字段已更新', true); cmsLoad(); }
+  catch (e) { showMsg('mkMsg', '✗ ' + e.message, false); }
+}
+async function cmsNewItem(id) { cmsItemForm(id, null); }
+async function cmsEditItem(id, itemId) {
+  const items = await api('/api/admin/collections/' + id + '/items') || [];
+  cmsItemForm(id, items.find(x => x.id === itemId));
+}
+function cmsItemForm(id, item) {
+  const c = _cmsCols.find(x => x.id === id);
+  const html = `<form id="cmsForm" style="display:flex;flex-direction:column;gap:4px">${fieldFormHTML(c.fields, item)}
+    <div style="display:flex;gap:8px"><button class="btn" type="submit">${item ? '保存修改' : '录入'}</button>
+    <button class="btn ghost" type="button" onclick="this.closest('.dash-card').querySelector('#cmsItemPanel').remove()">取消</button></div></form>`;
+  let panel = document.getElementById('cmsItemPanel');
+  if (panel) panel.remove();
+  const div = document.createElement('div'); div.id = 'cmsItemPanel'; div.className = 'dash-card'; div.style.marginTop = '8px';
+  div.innerHTML = `<b style="font-size:13px">${item ? '✏️ 编辑条目' : '＋ 录入条目'} · ${c.icon} ${c.name}</b>` + html;
+  $('cmsList').prepend(div);
+  div.querySelector('#cmsForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const d = collectForm(e.target);
+    try {
+      if (item) await api('/api/admin/collections/' + id + '/items/' + item.id, { method: 'PUT', json: d });
+      else await api('/api/admin/collections/' + id + '/items', { method: 'POST', json: d });
+      showMsg('mkMsg', '✓ 已保存', true); div.remove(); cmsLoad();
+    } catch (err) { showMsg('mkMsg', '✗ ' + err.message, false); }
+  };
+}
+async function cmsDelItem(id, itemId) {
+  if (!confirm('删除该条目？')) return;
+  await api('/api/admin/collections/' + id + '/items/' + itemId, { method: 'DELETE' }); cmsLoad();
+}
+</script>
 </body>
 </html>

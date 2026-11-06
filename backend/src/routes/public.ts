@@ -30,7 +30,7 @@ publicRouter.post('/notes/quick', (req, res) => {
 publicRouter.get('/site', (_req, res) => {
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const settings: Record<string, string> = {};
-  for (const r of rows) settings[r.key] = r.value;
+  for (const r of rows as any[]) settings[r.key] = r.value;
   res.json({ code: 'OK', data: settings });
 });
 
@@ -250,7 +250,7 @@ publicRouter.get('/search', (req, res) => {
   let notes: any[] = [];
   try {
     const rows = db.prepare(`SELECT widget_id, key, value FROM user_state WHERE value LIKE ? LIMIT 20`).all(like);
-    for (const r of rows) {
+    for (const r of rows as any[]) {
       try {
         const v = JSON.parse(r.value);
         const texts: string[] = [];
@@ -313,4 +313,36 @@ publicRouter.post('/countdowns', (req, res) => {
   db.prepare("INSERT INTO settings (key, value) VALUES ('countdowns', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .run(JSON.stringify(list));
   res.json({ code: 'OK', data: list });
+});
+
+// ===== CMS 内容集合（公开只读）=====
+const colStmt = {
+  get listCols() { return db.prepare('SELECT id, name, icon, fields_json FROM collections ORDER BY id'); },
+  get getCol() { return db.prepare('SELECT id, name, icon, fields_json FROM collections WHERE id = ?'); },
+  get getColByName() { return db.prepare('SELECT id, name, icon, fields_json FROM collections WHERE name = ?'); },
+  get items() { return db.prepare('SELECT id, data_json, sort_order, created_at FROM collection_items WHERE collection_id = ? ORDER BY sort_order, id DESC'); },
+  get item() { return db.prepare('SELECT id, data_json, sort_order, created_at FROM collection_items WHERE id = ?'); },
+};
+
+publicRouter.options('/collections*', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.status(204).end();
+});
+publicRouter.get('/collections', (req, res, next) => { res.setHeader('Access-Control-Allow-Origin', '*'); next(); }, (_req, res) => {
+  const rows = colStmt.listCols.all() as any[];
+  res.json({ code: 'OK', data: rows.map(r => ({ id: r.id, name: r.name, icon: r.icon, fields: JSON.parse(r.fields_json || '[]') })) });
+});
+publicRouter.get('/collections/:key/items', (req, res) => { res.setHeader('Access-Control-Allow-Origin', '*');
+  const key = String(req.params.key || '');
+  const col = /^\d+$/.test(key) ? colStmt.getCol.get(Number(key)) as any : colStmt.getColByName.get(key) as any;
+  if (!col) return res.status(404).json({ code: 'NOT_FOUND', message: '集合不存在' });
+  const items = (colStmt.items.all(col.id) as any[]).map(r => ({ id: r.id, ...JSON.parse(r.data_json || '{}'), _sort: r.sort_order, _created: r.created_at }));
+  res.json({ code: 'OK', data: items });
+});
+publicRouter.get('/collections/:key/items/:id', (req, res) => { res.setHeader('Access-Control-Allow-Origin', '*');
+  const col = colStmt.getCol.get(Number(req.params.key)) as any;
+  const it = colStmt.item.get(Number(req.params.id)) as any;
+  if (!col || !it || it.collection_id !== col.id) return res.status(404).json({ code: 'NOT_FOUND', message: '条目不存在' });
+  res.json({ code: 'OK', data: { id: it.id, ...JSON.parse(it.data_json || '{}'), _created: it.created_at } });
 });

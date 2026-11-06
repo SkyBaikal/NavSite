@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NavSite 管理后台</title>
+  <style>
+    :root {
+      --bg:#0b0e14; --card:rgba(255,255,255,.055); --ink:#e8eaf0; --muted:#8b93a7;
+      --accent:#2dd4bf; --accent-soft:rgba(45,212,191,.10); --line:rgba(255,255,255,.09); --danger:#f87171;
+      --glow:0 0 24px rgba(45,212,191,.10), 0 8px 32px rgba(0,0,0,.45);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family:'NavSerif','Noto Serif CJK SC','Noto Serif SC',serif;
+      background:var(--bg); color:var(--ink); line-height:1.6;
+    }
+    body::before, body::after {
+      content:''; position:fixed; border-radius:50%; filter:blur(90px); pointer-events:none; z-index:0; opacity:.5;
+    }
+    body::before { width:55vw; height:55vw; left:-12vw; top:-18vw; background:radial-gradient(circle, rgba(45,212,191,.20), transparent 65%); animation:blob1 26s ease-in-out infinite alternate; }
+    body::after { width:48vw; height:48vw; right:-14vw; bottom:-16vw; background:radial-gradient(circle, rgba(124,92,246,.22), transparent 65%); animation:blob2 32s ease-in-out infinite alternate; }
+    @keyframes blob1 { to { transform:translate(9vw,7vh) scale(1.15); } }
+    @keyframes blob2 { to { transform:translate(-8vw,-6vh) scale(1.1); } }
+    .container { max-width:1060px; margin:0 auto 0 200px; padding:28px 18px 90px; position:relative; z-index:1; }
+    header { display:flex; justify-content:space-between; align-items:center; padding-bottom:18px; margin-bottom:26px; position:relative; }
+    header::after { content:''; position:absolute; left:0; right:0; bottom:0; height:1px; background:linear-gradient(90deg,transparent,rgba(45,212,191,.5) 15%,rgba(124,92,246,.5) 85%,transparent); }
+    h1 { font-size:21px; font-weight:700; letter-spacing:.04em;
+      background:linear-gradient(100deg,#2dd4bf,#7c9ef6 55%,#c084fc);
+      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+    h1::before { content:'🧭 '; -webkit-text-fill-color:initial; }
+    .btn { padding:8px 16px; border:none; border-radius:8px; background:linear-gradient(120deg,#0d9488,#2dd4bf); color:#fff; cursor:pointer; font-size:13px; font-family:inherit; transition:all .18s ease; }
+    .btn:hover { filter:brightness(1.12); box-shadow:0 0 18px rgba(45,212,191,.3); transform:translateY(-1px); }
+    .btn:active { transform:translateY(0); }
+    .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--muted); }
+    .btn.ghost:hover { border-color:var(--accent); color:var(--accent); box-shadow:none; }
+    .btn.danger { background:linear-gradient(120deg,#b91c1c,#f87171); }
+    .btn.sm { padding:4px 10px; font-size:12px; }
+    section {
+      background:var(--card); backdrop-filter:saturate(1.4) blur(18px); -webkit-backdrop-filter:saturate(1.4) blur(18px);
+      border:1px solid var(--line); border-radius:16px; padding:22px; margin-bottom:22px; box-shadow:var(--glow);
+      transition:border-color .25s ease;
+    }
+    section:hover { border-color:rgba(45,212,191,.22); }
+    section h2 { font-size:16px; margin-bottom:16px; font-weight:700; letter-spacing:.02em; display:flex; align-items:center; gap:8px; padding-bottom:10px; border-bottom:1px dashed var(--line); }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+    input, select, textarea {
+      padding:8px 11px; border:1px solid var(--line); border-radius:8px; font-size:13px; font-family:inherit;
+      background:rgba(255,255,255,.04); color:var(--ink); transition:border-color .15s, box-shadow .15s;
+    }
+    textarea { line-height:1.6; }
+    input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
+    input:focus, select:focus, textarea:focus { outline:none; border-color:rgba(45,212,191,.5); box-shadow:0 0 0 4px rgba(45,212,191,.10); }
+    input.grow, textarea.grow { flex:1; min-width:140px; }
+    select option { background:#131722; color:var(--ink); }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
+    th { color:var(--muted); font-weight:600; font-size:12px; letter-spacing:.05em; }
+    tbody tr { transition:background .12s ease; }
+    tbody tr:hover { background:var(--accent-soft); }
+    td .ops { display:flex; gap:6px; }
+    .msg { padding:9px 13px; border-radius:8px; font-size:13px; margin:10px 0; display:none; }
+    .msg.show { display:block; animation:msgIn .25s ease; }
+    @keyframes msgIn { from { opacity:0; transform:translateY(-4px); } }
+    .msg.ok { background:rgba(45,212,191,.12); color:#5eead4; border:1px solid rgba(45,212,191,.25); }
+    .msg.err { background:rgba(248,113,113,.10); color:#fca5a5; border:1px solid rgba(248,113,113,.25); }
+    #loginBox { max-width:380px; margin:110px auto 0; }
+    #loginBox .container { padding:0; }
+    #loginBox section { padding:30px 26px; }
+    #loginBox h2 { justify-content:center; font-size:18px; border-bottom:none; padding-bottom:4px; }
+    #mainBox { display:none; animation:mainIn .4s ease both; }
+    @keyframes mainIn { from { opacity:0; transform:translateY(8px); } }
+    section { animation:secIn .4s ease both; }
+    section:nth-of-type(1){animation-delay:.03s} section:nth-of-type(2){animation-delay:.06s}
+    section:nth-of-type(3){animation-delay:.09s} section:nth-of-type(4){animation-delay:.12s}
+    section:nth-of-type(5){animation-delay:.15s} section:nth-of-type(6){animation-delay:.18s}
+    section:nth-of-type(7){animation-delay:.21s} section:nth-of-type(8){animation-delay:.24s}
+    section:nth-of-type(9){animation-delay:.27s}
+    @keyframes secIn { from { opacity:0; transform:translateY(10px); } }
+    .alias-badge { display:inline-block; padding:1px 8px; border-radius:6px; background:rgba(45,212,191,.12); color:#2dd4bf; font-size:11px; border:1px solid rgba(45,212,191,.3); }
+.icon-preview { width:16px; height:16px; vertical-align:-3px; border-radius:3px; }
+    ::-webkit-scrollbar { width:8px; }
+    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.14); border-radius:4px; }
+    ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.25); }
+    @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
+    @media (max-width: 640px) {
+      .container { padding:12px 10px 60px; }
+      .row { flex-wrap: wrap; gap: 6px; }
+      .row .grow { min-width: 100%; }
+      table { display:block; overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling: touch; }
+      th, td { padding: 6px 8px; font-size: 12px; }
+      header { flex-wrap: wrap; gap: 8px; }
+      h1 { font-size: 18px; }
+      h2 { font-size: 15px; }
+      .btn { padding: 6px 12px; font-size: 13px; }
+      textarea.grow { min-width: 100%; }
+    }
+  
+    /* 侧边导航 */
+    #sideNav {
+      position: fixed; left: 0; top: 0; bottom: 0; width: 172px; transform: none;
+      display: flex; flex-direction: column; gap: 2px; z-index: 90;
+      background: rgba(10,14,22,.82); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-right: 1px solid var(--line); border-radius: 0; padding: 14px 10px;
+      overflow-y: auto;
+    }
+    #sideNav .nav-brand { font-size: 15px; font-weight: 700; padding: 6px 10px 14px; letter-spacing: .06em; color: var(--ink); border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+    #sideNav a {
+      display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px;
+      color: var(--muted); text-decoration: none; font-size: 13.5px; white-space: nowrap;
+      transition: all .15s ease; border-left: 3px solid transparent;
+    }
+    #sideNav a:hover { color: var(--accent); background: var(--accent-soft); }
+    #sideNav a.on { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); text-shadow: 0 0 10px rgba(45,212,191,.5); }
+    @media (max-width: 1180px) {
+      #sideNav { left: auto; right: 0; top: auto; bottom: 0; width: 100%; height: 54px; flex-direction: row; padding: 6px; overflow-x: auto; border-right: 0; border-top: 1px solid var(--line); }
+      #sideNav .nav-brand { display: none; }
+      .container { margin-left: 0 !important; margin-bottom: 60px; }
+    }
+    table tbody tr:nth-child(even) { background: rgba(255,255,255,.025); }
+    table tbody tr { transition: background .12s; }
+    table tbody tr:hover { background: var(--accent-soft); }
+    section > h2 { font-size: 19px; padding: 10px 14px; border-left: 4px solid var(--accent); background: linear-gradient(90deg, rgba(45,212,191,.08), transparent 70%); border-radius: 0 10px 10px 0; margin-bottom: 14px; letter-spacing: .04em; }
+    .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .dash-card { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+    .dash-card .num { font-size: 26px; font-weight: 800; color: var(--accent); text-shadow: 0 0 14px rgba(45,212,191,.4); }
+    .dash-card .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    #evList { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }
+    #evList li { padding: 5px 0; border-bottom: 1px dashed var(--line); color: var(--muted); display: flex; gap: 8px; }
+    #evList li b { color: var(--ink); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div id="loginBox" class="container">
+    <section>
+      <h2>🧭 NavSite 管理后台</h2>
+      <div class="row"><input class="grow" id="liUser" placeholder="账号"></div>
+      <div class="row"><input class="grow" id="liPass" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="row" id="liTotpRow" style="display:none"><input class="grow" id="liTotp" placeholder="6 位两步验证码" inputmode="numeric" maxlength="6"></div>
+      <div class="row" id="liCapRow" style="display:none;align-items:center;gap:8px"><div id="liCapBox" style="cursor:pointer;flex:none" title="点击刷新" onclick="loadLiCap()"></div><input class="grow" id="liCap" placeholder="图中 4 位数字" inputmode="numeric" maxlength="4" autocomplete="off" style="width:120px"></div>
+      <div class="row"><button class="btn" style="width:100%" onclick="doLogin()">登 录</button></div>
+      <div class="msg" id="liMsg"></div>
+    </section>
+  </div>
+
+  <div id="mainBox" class="container">
+    <header>
+      <h1>NavSite 后台</h1>
+      <div><span id="whoami" style="font-size:13px;color:var(--muted);margin-right:12px"></span>
+      <button class="btn ghost sm" onclick="doLogout()">退出</button></div>
+    </header>
+
+    <section id="sec-dash">
+      <h2>🏠 仪表盘</h2>
+      <div class="dash-grid" id="dashGrid"></div>
+      <div class="dash-card" style="margin-bottom:14px">
+        <div class="lbl" style="margin-bottom:8px">🕓 最近操作</div>
+        <ul id="evList"></ul>
+      </div>
+    </section>
+
+    <section id="sec-market">
+      <h2>🧩 Widget 市场</h2>
+      <div class="row">
+        <textarea id="mkManifest" class="grow" rows="4" placeholder='粘贴 widget manifest JSON：{"id":"my-widget","name":"我的组件","version":"1.0.0","desc":"…","icon":"🧩"}' style="font-size:12px;font-family:monospace"></textarea>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn" onclick="installWidget()">安装 / 更新</button>
+          <button class="btn ghost" onclick="loadMarket()">刷新目录</button>
+        </div>
+      </div>
+      <div class="msg" id="mkMsg"></div>
+      <table id="mkTable"><thead><tr><th>图标</th><th>ID</th><th>名称</th><th>版本</th><th>描述</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="sec-cats">
+      <h2>📁 分类管理</h2>
+      <div class="row">
+        <input id="catIcon" placeholder="图标" style="width:70px">
+        <input class="grow" id="catName" placeholder="分类名称">
+        <button class="btn" onclick="addCategory()">添加分类</button>
+      </div>
+      <table id="catTable"><thead><tr><th>图标</th><th>名称</th><th>排序</th><th>链接数</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="sec-links">
+      <h2>🔗 链接管理</h2>
+      <div class="row">
+        <select id="linkCat"></select>
+        <input id="linkTitle" placeholder="标题" style="width:140px">
+        <input class="grow" id="linkUrl" placeholder="https://…">
+        <input class="grow" id="linkDesc" placeholder="描述（可选）">
+        <button class="btn" onclick="addLink()">添加</button>
+        <button class="btn ghost" onclick="fetchMeta()">自动抓取图标/标题</button>
+      </div>
+      <div class="row">
+        <input class="grow" id="linkSearch" placeholder="🔍 搜索标题/URL/描述…" oninput="renderLinks()">
+        <select id="linkFilterCat" onchange="renderLinks()"><option value="">全部分类</option></select>
+        <span id="linkCount" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div class="row">
+        <button class="btn ghost" onclick="runHealthcheck(this)">🏥 链接健康检查</button>
+        <span id="hcSummary" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="hcResult" style="display:none;margin-top:8px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px"></div>
+      <div class="row" id="batchBar" style="display:none;background:var(--accent-bg,#eef);padding:6px 10px;border-radius:8px">
+        <strong style="font-size:12px">已选 <span id="batchCount">0</span> 条：</strong>
+        <button class="btn sm" onclick="batchMove()">移动到…</button>
+        <button class="btn sm ghost" onclick="batchToggle(1)">显示</button>
+        <button class="btn sm ghost" onclick="batchToggle(0)">隐藏</button>
+        <button class="btn sm danger" onclick="batchDelete()">删除</button>
+        <button class="btn sm ghost" onclick="batchSel.clear();renderLinks()">取消</button>
+      </div>
+      <div class="msg" id="linkMsg"></div>
+      <table id="linkTable"><thead><tr><th><input type="checkbox" onchange="selectAllLinks(this)"></th><th>图标</th><th>标题</th><th>别名</th><th>URL</th><th>分类</th><th>点击</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="sec-settings">
+      <h2>⚙️ 站点设置 & 数据</h2>
+      <div class="row">
+        <input class="grow" id="setTitle" placeholder="站点标题">
+        <button class="btn" onclick="saveSettings()">保存设置</button>
+        <a class="btn ghost" href="/api/admin/export" download style="text-decoration:none">导出 JSON</a>
+        <a class="btn ghost" href="/api/admin/export/obsidian" download style="text-decoration:none">🪷 导出 Obsidian</a>
+      <div class="row" style="margin-top:10px;align-items:flex-start">
+        <div class="grow" style="border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+          <div style="font-weight:600;margin-bottom:6px">📲 入站 Webhook（手机快捷指令）</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px">把任何文字丢进 NavSite：<code>action</code> = <b>note</b>（默认，进速记）/ <b>todo</b>（进待办）/ <b>link</b>（配 url 收藏）</div>
+          <div class="row" style="margin-bottom:6px">
+            <input class="grow" id="hookToken" readonly style="font-family:monospace;font-size:12px" placeholder="点击「加载 Token」">
+            <button class="btn sm" onclick="loadHookToken()">加载</button>
+            <button class="btn ghost sm" onclick="rotateHookToken()">重置</button>
+            <button class="btn ghost sm" onclick="navigator.clipboard.writeText(document.getElementById('hookToken').value).then(()=>flash('已复制'))">复制</button>
+          </div>
+          <textarea id="hookExample" readonly rows="3" style="width:100%;font-size:11px;font-family:monospace;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;color:var(--muted);padding:8px"></textarea>
+        </div>
+      </div>
+      </div>
+      <div class="row">
+        <input type="file" id="bmFile" accept=".html" style="font-size:12px">
+        <button class="btn ghost" onclick="importBookmarks()">导入浏览器书签</button>
+        <span style="font-size:11px;color:var(--muted)">（从浏览器书签管理器导出 HTML 后选择文件）</span>
+      </div>
+      <div class="row">
+        <input type="file" id="cfgFile" accept=".json" style="font-size:12px">
+        <button class="btn ghost" onclick="importConfig()">导入配置包</button>
+        <span style="font-size:11px;color:var(--muted)">（merge=追加去重；full=清空重建需在弹窗确认）</span>
+      </div>
+      <div class="msg" id="cfgMsg"></div>
+      <div class="row" style="margin-top:10px">
+        <strong style="font-size:13px">🗄️ 自动备份</strong>
+        <button class="btn ghost" onclick="backupNow()">立即备份</button>
+        <button class="btn ghost" onclick="loadBackups()">刷新</button>
+        <span style="font-size:11px;color:var(--muted)">每天 04:00 自动全量备份到 data/backups/，保留 14 份</span>
+      </div>
+      <div class="msg" id="bkMsg"></div>
+      <table id="bkTable"><thead><tr><th>文件</th><th>大小</th><th>时间</th><th>操作</th></tr></thead><tbody></tbody></table>
+      <div class="msg" id="bmMsg"></div>
+    </section>
+
+    <section id="sec-appearance">
+      <h2>🎛️ 外观遥控 <span style="font-size:11px;color:var(--muted)">（保存后前台刷新生效）</span></h2>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <input id="apName" placeholder="站名（logo/标题）" class="grow" style="max-width:200px">
+        <input id="apPlaceholder" placeholder="搜索框占位文字" class="grow" style="max-width:220px">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="apFooter" placeholder="页脚 HTML（可含链接，谨慎）" style="flex:1">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <textarea id="apEngines" class="grow" rows="3" style="font-size:12px;font-family:monospace" placeholder='自定义搜索引擎（JSON 数组，可选）：[{"id":"baidu","name":"百度","url":"https://www.baidu.com/s?wd="}]'></textarea>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <textarea id="apCss" class="grow" rows="6" style="font-size:12px;font-family:monospace" placeholder="自定义 CSS —— 直接覆盖前台任何样式，例如：&#10;.logo { color: #e05656; }&#10;.widget { border-radius: 4px; }"></textarea>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" onclick="saveAppearance()">💾 保存外观</button>
+        <button class="btn ghost" onclick="loadAppearance()">重载</button>
+        <button class="btn ghost" id="hfBtn" onclick="toggleHotFloat()">🔥 常用上浮：?</button>
+        <span class="msg grow" id="apMsg"></span>
+      </div>
+    </section>
+
+    <section id="sec-pass">
+      <h2>🔑 管理密码</h2>
+      <div class="row">
+        <input id="pwOld" type="password" placeholder="当前密码" autocomplete="current-password">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="pwNew" type="password" placeholder="新密码（至少 8 位）" autocomplete="new-password" class="grow">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="pwNew2" type="password" placeholder="再输一遍新密码" autocomplete="new-password" class="grow">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" onclick="changePass()">🔐 修改密码</button>
+        <span class="msg grow" id="pwMsg"></span>
+      </div>
+    </section>
+
+      <div style="margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)">
+        <h2 style="border-bottom:none;padding-bottom:4px;margin-bottom:8px">🛡️ 两步验证（TOTP）</h2>
+        <div class="row"><span id="faStatus" style="font-size:13px;color:var(--muted)">查询中…</span></div>
+        <div id="faSetup" style="display:none">
+          <div class="row"><input id="faSecret" readonly class="grow" style="font-family:monospace" placeholder="密钥"></div>
+          <div class="row"><input id="faCode" placeholder="输入验证器 App 显示的 6 位码" maxlength="6" class="grow"></div>
+          <div class="row">
+            <button class="btn" onclick="faEnable()">✅ 确认启用</button>
+            <span class="msg grow" id="faMsg"></span>
+          </div>
+        </div>
+        <div id="faDisable" style="display:none">
+          <div class="row"><input id="faOffCode" placeholder="输入当前 6 位码以关闭" maxlength="6" class="grow">
+          <button class="btn danger sm" onclick="faDisable()">关闭两步验证</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-viewers">
+      <h2>👥 只读账号</h2>
+      <div class="row">
+        <input id="vwUser" placeholder="用户名" class="grow" style="max-width:160px">
+        <input id="vwPass" type="password" placeholder="密码" class="grow" style="max-width:160px">
+        <button class="btn" onclick="addViewer()">添加账号</button>
+        <button class="btn ghost" onclick="loadViewers()">刷新</button>
+        <span style="font-size:11px;color:var(--muted)">只读账号可看后台，不能做任何修改</span>
+      </div>
+      <div class="msg" id="vwMsg"></div>
+      <table id="vwTable"><thead><tr><th>用户名</th><th>创建时间</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="sec-data">
+      <h2>🧬 模块数据</h2>
+      <div class="row">
+        <button class="btn ghost" onclick="loadWidgetData()">刷新</button>
+        <button class="btn ghost danger" onclick="clearCountdowns()">清空全部倒计时</button>
+        <span style="font-size:11px;color:var(--muted)">前台各模块的用户数据一览：查看大小、按项清空（操作会记入审计日志）</span>
+      </div>
+      <div class="msg" id="wdMsg"></div>
+      <table id="wdTable"><thead><tr><th>模块</th><th>数据项</th><th>大小</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="sec-stats">
+      <h2>📊 数据统计 <button class="btn sm" onclick="loadStats()">刷新</button> <button class="btn sm ghost" onclick="pruneEvents()">🧹 清理过期日志</button>
+        <a class="btn sm ghost" href="/api/admin/export/links.csv" style="text-decoration:none">📥 导出链接 CSV</a>
+        <a class="btn sm ghost" href="/api/admin/export/events.csv" style="text-decoration:none">📥 导出事件 CSV</a></h2>
+      <div class="msg" id="statMsg"></div>
+      <div class="row" id="statCards" style="flex-wrap:wrap;gap:10px"></div>
+      <div style="margin-top:14px"><b style="font-size:13px">近 14 天点击趋势</b><div id="trendChart" style="display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:8px"></div></div>
+      <div style="margin-top:14px"><b style="font-size:13px">链接点击 Top 10</b><div id="topLinks" style="margin-top:8px"></div></div>
+      <div style="margin-top:14px"><b style="font-size:13px">事件分布（最近 500 条）</b><div id="eventDist" style="margin-top:8px;font-size:12px;color:var(--muted)"></div></div>
+      <div style="margin-top:14px"><b style="font-size:13px">🕐 最近事件</b><div id="recentEvents" style="margin-top:8px;font-size:12px"></div></div>
+    </section>
+
+    <section id="sec-insights">
+      <h2>📈 数据洞察 <button class="btn ghost sm" onclick="loadInsights()" style="margin-left:auto">刷新</button></h2>
+      <div id="insBody" style="font-size:13px">加载中…</div>
+    </section>
+    <section id="sec-packs">
+      <h2>🎁 配置包商店 <button class="btn ghost sm" onclick="loadPacks()" style="margin-left:auto">刷新</button></h2>
+      <div id="packList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">加载中…</div>
+    </section>
+  </div>
+
+<script>
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+const $ = id => document.getElementById(id);
+function showMsg(id, text, ok) { const e = $(id); e.textContent = text; e.className = 'msg show ' + (ok ? 'ok' : 'err'); }
+
+async function api(path, opts = {}) {
+  if (opts.json) { opts.body = JSON.stringify(opts.json); opts.headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) }; }
+  const res = await fetch(path, { ...opts, credentials: 'same-origin' });
+  const data = await res.json();
+  if (res.status === 401) { showLogin(); throw new Error(data.message || '请先登录'); }
+  if (data.code !== 'OK') throw new Error(data.message || data.code);
+  return data.data;
+}
+
+let liCapToken = '';
+async function loadLiCap() {
+  try { const r = await fetch('/api/admin/captcha', { cache: 'no-store' }); const d = await r.json();
+    if (d.data && d.data.enabled) { $('liCapRow').style.display = 'flex'; $('liCapBox').innerHTML = d.data.svg; liCapToken = d.data.token; }
+    else { $('liCapRow').style.display = 'none'; liCapToken = ''; }
+  } catch (_) {}
+}
+loadLiCap();
+async function doLogin() {
+  try {
+    await fetch('/api/healthz', { credentials: 'same-origin', cache: 'no-store' }); // CF 预热
+    const body = { username: $('liUser').value, password: $('liPass').value };
+    if ($('liTotpRow').style.display !== 'none' && $('liTotp').value) body.totp = $('liTotp').value;
+    if (liCapToken) { body.captcha_token = liCapToken; body.captcha_answer = $('liCap').value; }
+    await api('/api/admin/login', { method: 'POST', json: body });
+    showMain();
+  } catch (e) {
+    if (e.message && e.message.includes('两步验证')) { $('liTotpRow').style.display = 'block'; $('liTotp').focus(); }
+    else if (e.message && e.message.includes('验证码')) loadLiCap();
+    else if (/网络|fetch|Failed/i.test(String(e.message))) showMsg('liMsg', '可能被 Cloudflare 安全挑战拦截：请刷新页面重试；若持续失败请在 Cloudflare 面板关闭 Bot Fight Mode', false);
+    showMsg('liMsg', e.message, false);
+  }
+}
+async function loadDash() {
+  try {
+    const [st, evs] = await Promise.all([api('/api/admin/stats'), api('/api/admin/notes')]);
+    const s = st || {};
+    const t = s.totals || {};
+    let noteCount = '—';
+    try { const n = evs; noteCount = (Array.isArray(n) ? n.length : (n.notes ? n.notes.length : '—')); } catch (_) {}
+    const cards = [
+      ['📁', t.categories ?? '—', '分类'],
+      ['🔗', t.links ?? '—', '链接'],
+      ['👆', t.totalClicks ?? '—', '累计点击'],
+      ['📝', noteCount, '笔记'],
+      ['🧾', t.events ?? '—', '事件数'],
+      ['💾', t.dbBytes ? (t.dbBytes / 1024).toFixed(0) + ' KB' : '—', '数据库体积'],
+    ];
+    $('dashGrid').innerHTML = cards.map(([ic, num, lbl]) => `<div class="dash-card"><div class="num">${esc(String(num))}</div><div class="lbl">${ic} ${lbl}</div></div>`).join('');
+    const list = s.recentEvents || [];
+    $('evList').innerHTML = list.length ? list.slice(0, 10).map(e => {
+      let detail = '';
+      try { const p = JSON.parse(e.payload_json || '{}'); detail = p.title || p.name || p.key || p.url || ''; } catch (_) {}
+      return `<li><span>${new Date(e.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span><b>${esc(e.type)}</b><span>${esc(String(detail)).slice(0, 50)}</span></li>`;
+    }).join('') : '<li>暂无事件</li>';
+  } catch (e) { $('dashGrid').innerHTML = '<div class="dash-card"><div class="lbl">加载失败：' + esc(String(e.message || e)) + '</div></div>'; }
+}
+
+function buildSideNav() {
+  const nav = document.createElement('div');
+  nav.id = 'sideNav';
+  const items = [['sec-dash','🏠 仪表盘'],['sec-market','🧩 市场'],['sec-cats','📁 分类'],['sec-links','🔗 链接'],['sec-settings','⚙️ 设置'],['sec-appearance','🎛️ 外观'],['sec-pass','🔑 密码'],['sec-viewers','👥 账号'],['sec-data','🧬 数据'],['sec-stats','📊 统计'],['sec-insights','📈 洞察'],['sec-packs','🎁 商店']];
+  nav.innerHTML = '<div class="nav-brand">🧭 NavSite</div>' + items.map(([id,label]) => { const el = document.getElementById(id); return el ? `<a href="#${id}" data-t="${id}">${label}</a>` : ''; }).join('');
+  document.body.appendChild(nav);
+  const links = nav.querySelectorAll('a');
+  links.forEach(a => a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.t)?.scrollIntoView({behavior:'smooth', block:'start'}); });
+  const obs = new IntersectionObserver((es) => {
+    es.forEach(en => { if (en.isIntersecting) { links.forEach(a => a.classList.toggle('on', a.dataset.t === en.target.id)); } });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  items.forEach(([id]) => { const el = document.getElementById(id); if (el) obs.observe(el); });
+}
+async function loadHookToken() {
+  try { const r = await api('/api/admin/hooks/token'); $('hookToken').value = r.token;
+    $('hookExample').value = `curl -X POST ${location.origin}/api/hooks/${r.token} -H 'Content-Type: application/json' -d '{"text":"通勤路上想到的","action":"note"}'`;
+    flash('Token 已加载');
+  } catch (e) { showMsg('mkMsg', '加载失败：' + (e.message || e), false); }
+}
+async function rotateHookToken() {
+  if (!confirm('重置后旧 Token 立即失效，快捷指令需要更新。继续？')) return;
+  try { const r = await api('/api/admin/hooks/rotate', { method: 'POST', json: {} }); $('hookToken').value = r.token; flash('已重置'); }
+  catch (e) { showMsg('mkMsg', '重置失败：' + (e.message || e), false); }
+}
+async function doLogout() { await api('/api/admin/logout', { method: 'POST' }); showLogin(); }
+function showLogin() { $('loginBox').style.display = 'block'; $('mainBox').style.display = 'none'; }
+function showMain() { $('loginBox').style.display = 'none'; $('mainBox').style.display = 'block'; loadAll(); buildSideNav(); faStatus(); loadHotFloatState(); loadInsights(); loadPacks(); loadDash(); }
+
+let cats = [], links = [];
+async function loadAll() {
+  cats = await api('/api/admin/categories');
+  links = await api('/api/admin/links');
+  renderCats(); renderLinks(); renderCatSelect(); loadSettings();
+  loadBackups(); loadWidgetData(); loadStats(); loadViewers(); loadAppearance();
+  const me = await api('/api/admin/me'); $('whoami').textContent = me.user;
+}
+
+async function renderCats() {
+  const tb = $('catTable').querySelector('tbody'); tb.innerHTML = '';
+  for (const c of cats) {
+    const n = links.filter(l => l.category_id === c.id).length;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${esc(c.icon)}</td><td>${esc(c.name)}</td><td>${c.sort_order}</td><td>${n}</td>
+      <td class="ops"><button class="btn sm ghost" onclick="moveCat(${c.id},-1)">↑</button>
+      <button class="btn sm ghost" onclick="moveCat(${c.id},1)">↓</button>
+      <button class="btn sm ghost" onclick="renameCat(${c.id},'${c.name.replace(/'/g,"\\'")}')">改名</button>
+      <button class="btn sm danger" onclick="delCat(${c.id})">删除</button></td>`;
+    tb.appendChild(tr);
+  }
+}
+async function addCategory() {
+  if (!$('catName').value.trim()) return alert('请输入分类名称');
+  await api('/api/admin/categories', { method: 'POST', json: { name: $('catName').value.trim(), icon: $('catIcon').value.trim() } });
+  $('catName').value = ''; $('catIcon').value = '';
+  cats = await api('/api/admin/categories'); renderCats(); renderCatSelect();
+}
+async function renameCat(id, old) {
+  const name = prompt('新名称', old); if (!name) return;
+  await api(`/api/admin/categories/${id}`, { method: 'PUT', json: { name } });
+  cats = await api('/api/admin/categories'); renderCats(); renderCatSelect();
+}
+async function delCat(id) {
+  if (!confirm('删除分类会同时删除其下所有链接，确定？')) return;
+  const snap = cats.find(c => c.id === id);
+  const subLinks = links.filter(l => l.category_id === id);
+  await api(`/api/admin/categories/${id}`, { method: 'DELETE' });
+  if (snap) { undoData = { kind: 'category', data: snap, subLinks }; showUndo('「' + snap.name + '」及其 ' + subLinks.length + ' 个链接'); }
+  cats = await api('/api/admin/categories'); links = await api('/api/admin/links');
+  renderCats(); renderLinks(); renderCatSelect();
+}
+async function moveCat(id, dir) {
+  const sorted = [...cats].sort((a, b) => a.sort_order - b.sort_order);
+  const i = sorted.findIndex(c => c.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= sorted.length) return;
+  [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+  await api('/api/admin/categories/reorder', { method: 'POST', json: { orders: sorted.map((c, k) => ({ id: c.id, sort_order: k })) } });
+  cats = await api('/api/admin/categories');
+  renderCats(); renderCatSelect();
+}
+
+function renderCatSelect() {
+  $('linkCat').innerHTML = cats.map(c => `<option value="${c.id}">${esc(c.icon)} ${esc(c.name)}</option>`).join('');
+  $('linkFilterCat').innerHTML = '<option value="">全部分类</option>' + cats.map(c => `<option value="${c.id}">${esc(c.icon)} ${esc(c.name)}</option>`).join('');
+}
+function renderLinks() {
+  const tb = $('linkTable').querySelector('tbody'); tb.innerHTML = '';
+  const catName = id => (cats.find(c => c.id === id) || {}).name || '?';
+  const kw = ($('linkSearch')?.value || '').toLowerCase();
+  const selCat = $('linkFilterCat')?.value || '';
+  const visible = links.filter(l =>
+    (!kw || (l.title + ' ' + l.url + ' ' + (l.description || '')).toLowerCase().includes(kw)) &&
+    (!selCat || String(l.category_id) === selCat));
+  $('linkCount').textContent = `${visible.length}/${links.length}`;
+  $('batchBar').style.display = batchSel.size ? 'inline-flex' : 'none';
+  for (const l of visible) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="checkbox" class="lk-chk" data-id="${l.id}" ${batchSel.has(l.id) ? 'checked' : ''}></td>
+      <td>${l.icon_url ? `<img class="icon-preview" src="${esc(l.icon_url)}" alt="">` : `<img class="icon-preview" src="/api/favicon?host=${encodeURIComponent(hostOf(l.url))}" alt="">`}</td>
+      <td>${l.alias ? `<span class="alias-badge">⚡ ${esc(l.alias)}</span>` : ""}</td>
+      <td>${esc(l.title)}</td><td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.url)}</td>
+      <td>${esc(catName(l.category_id))}</td><td>${l.clicks}</td>
+      <td class="ops"><button class="btn sm ghost" onclick="editLink(${l.id})">编辑</button>
+      <button class="btn sm danger" onclick="delLink(${l.id})">删除</button></td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll('.lk-chk').forEach(chk => chk.onchange = () => {
+    const id = Number(chk.dataset.id);
+    chk.checked ? batchSel.add(id) : batchSel.delete(id);
+    $('batchBar').style.display = batchSel.size ? 'inline-flex' : 'none';
+    $('batchCount').textContent = batchSel.size;
+  });
+}
+let batchSel = new Set();
+async function batchMove() {
+  if (!batchSel.size) return;
+  const target = prompt('移动到哪个分类？输入分类名（如：学习资源）：');
+  if (!target) return;
+  const c = cats.find(c => c.name === target);
+  if (!c) return showMsg('linkMsg', '✗ 分类不存在', false);
+  for (const id of batchSel) await api(`/api/admin/links/${id}`, { method: 'PUT', json: { category_id: c.id } });
+  showMsg('linkMsg', `✓ 已移动 ${batchSel.size} 条到 ${c.name}`, true);
+  batchSel.clear(); await loadAll();
+}
+async function batchDelete() {
+  if (!batchSel.size) return;
+  if (!confirm(`确定删除选中的 ${batchSel.size} 条链接？不可恢复！`)) return;
+  for (const id of batchSel) await api(`/api/admin/links/${id}`, { method: 'DELETE' });
+  showMsg('linkMsg', `✓ 已删除 ${batchSel.size} 条`, true);
+  batchSel.clear(); await loadAll();
+}
+async function batchToggle(visible) {
+  if (!batchSel.size) return;
+  for (const id of batchSel) await api(`/api/admin/links/${id}`, { method: 'PUT', json: { is_visible: visible ? 1 : 0 } });
+  showMsg('linkMsg', `✓ 已${visible ? '显示' : '隐藏'} ${batchSel.size} 条`, true);
+  batchSel.clear(); await loadAll();
+}
+function selectAllLinks(chk) {
+  batchSel = chk.checked ? new Set(links.map(l => l.id)) : new Set();
+  renderLinks();
+}
+function hostOf(u) { try { return new URL(u).hostname; } catch { return ''; } }
+async function addLink() {
+  const title = $('linkTitle').value.trim(), url = $('linkUrl').value.trim();
+  if (!title || !url) return showMsg('linkMsg', '标题和 URL 必填', false);
+  try {
+    await api('/api/admin/links', { method: 'POST', json: { category_id: Number($('linkCat').value), title, url, description: $('linkDesc').value.trim() } });
+    showMsg('linkMsg', '✓ 已添加', true);
+    $('linkTitle').value = ''; $('linkUrl').value = ''; $('linkDesc').value = '';
+    links = await api('/api/admin/links'); renderLinks();
+  } catch (e) { showMsg('linkMsg', e.message, false); }
+}
+async function editLink(id) {
+  const l = links.find(x => x.id === id); if (!l) return;
+  openLinkModal(l);
+}
+function openLinkModal(l) {
+  $('mTitle').value = l.title; $('mUrl').value = l.url; $('mDesc').value = l.description || '';
+  $('mCat').innerHTML = cats.map(c => `<option value="${c.id}" ${c.id === l.category_id ? 'selected' : ''}>${esc(c.icon)} ${esc(c.name)}</option>`).join('');
+  $('mVis').checked = !!l.is_visible;
+  $('linkModal').style.display = 'flex';
+  $('linkModal').dataset.id = l.id;
+}
+function closeLinkModal() { $('linkModal').style.display = 'none'; }
+async function saveLinkModal() {
+  const id = $('linkModal').dataset.id;
+  try {
+    await api(`/api/admin/links/${id}`, { method: 'PUT', json: {
+      title: $('mTitle').value.trim(), url: $('mUrl').value.trim(),
+      description: $('mDesc').value.trim(), category_id: Number($('mCat').value),
+      is_visible: $('mVis').checked ? 1 : 0,
+    } });
+    closeLinkModal();
+    links = await api('/api/admin/links'); renderLinks();
+    showMsg('linkMsg', '✓ 已保存', true);
+  } catch (e) { showMsg('linkMsg', e.message, false); }
+}
+let undoData = null, undoTimer = null;
+function showUndo(label) {
+  let bar = document.getElementById('undoBar');
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'undoBar';
+    bar.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;display:flex;gap:12px;align-items:center;z-index:99;box-shadow:0 6px 24px rgba(0,0,0,.25)';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `${label} 已删除 <button style="border:none;background:#fff;color:var(--ink);border-radius:6px;padding:4px 12px;cursor:pointer;font-weight:600" onclick="doUndo()">撤销</button>`;
+  bar.style.display = 'flex';
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => { bar.style.display = 'none'; undoData = null; }, 6000);
+}
+function doUndo() {
+  if (!undoData) return;
+  const d = undoData; undoData = null;
+  document.getElementById('undoBar').style.display = 'none';
+  if (d.kind === 'link') {
+    const { id, ...rest } = d.data;
+    api('/api/admin/links', { method: 'POST', json: rest }).then(() => { showMsg('linkMsg', '✓ 已撤销删除', true); loadAll(); });
+  } else if (d.kind === 'category') {
+    const { id, sort_order, links: _l, ...rest } = d.data;
+    api('/api/admin/categories', { method: 'POST', json: rest }).then(async r => {
+      const newId = r.data?.id || r.id;
+      for (const l of (d.subLinks || [])) {
+        const { id: _i, category_id, sort_order: _s, ...lr } = l;
+        await api('/api/admin/links', { method: 'POST', json: { ...lr, category_id: newId } });
+      }
+      showMsg('catMsg', '✓ 已撤销删除（含 ' + (d.subLinks || []).length + ' 个链接）', true); loadAll();
+    });
+  }
+}
+async function delLink(id) {
+  if (!confirm('确定删除该链接？')) return;
+  const snap = links.find(l => l.id === id);
+  await api(`/api/admin/links/${id}`, { method: 'DELETE' });
+  if (snap) { undoData = { kind: 'link', data: snap }; showUndo('「' + (snap.title || snap.url) + '」'); }
+  links = await api('/api/admin/links'); renderLinks();
+}
+async function fetchMeta() {
+  const url = $('linkUrl').value.trim();
+  if (!url) return showMsg('linkMsg', '先填 URL 再抓取', false);
+  showMsg('linkMsg', '抓取中…', true);
+  try {
+    const host = hostOf(url);
+    // 预热 favicon 缓存
+    await fetch('/api/favicon?host=' + encodeURIComponent(host));
+    if (!$('linkTitle').value.trim()) {
+      try {
+        const res = await fetch('/api/fetch-title?url=' + encodeURIComponent(url));
+        const d = await res.json();
+        if (d.code === 'OK' && d.data.title) $('linkTitle').value = d.data.title;
+      } catch {}
+    }
+    showMsg('linkMsg', '✓ 图标已缓存，填写后保存即可', true);
+  } catch (e) { showMsg('linkMsg', e.message, false); }
+}
+async function loadSettings() {
+  const s = await api('/api/admin/settings');
+  const map = {}; for (const r of s) map[r.key] = r.value;
+  $('setTitle').value = map.site_title || '';
+  if (map.site_title) document.title = map.site_title + ' · 后台';
+}
+async function saveSettings() {
+  await api('/api/admin/settings', { method: 'PUT', json: { site_title: $('setTitle').value } });
+  alert('已保存');
+}
+async function importBookmarks() {
+  const f = $('bmFile').files[0];
+  if (!f) return showMsg('bmMsg', '请先选择书签 HTML 文件', false);
+  showMsg('bmMsg', '导入中…', true);
+  const html = await f.text();
+  try {
+    const d = await api('/api/admin/import/bookmarks', { method: 'POST', json: { html } });
+    showMsg('bmMsg', `✓ 解析 ${d.parsed} 条，实际导入 ${d.imported} 条（重复自动跳过）`, true);
+    links = await api('/api/admin/links'); cats = await api('/api/admin/categories');
+    renderLinks(); renderCats(); renderCatSelect();
+  } catch (e) { showMsg('bmMsg', e.message, false); }
+}
+
+// 启动：检查登录态
+api('/api/admin/me').then(me => { $('whoami').textContent = me.user; showMain(); }).catch(() => showLogin());
+
+// ---- 自动备份 ----
+const WTYPES = { searchbar:'🔍 搜索框', clock:'🕐 时钟', category:'📁 分类', hitokoto:'💬 一言', quicknote:'📝 速记便签', habit:'🔥 习惯打卡', rss:'📰 RSS', weather:'🌤️ 天气', dailyshot:'🖼️ 每日一图', countdown:'⏳ 倒计时', recent:'🕒 最近访问', quote:'✒️ 句子收藏' };
+async function toggleHotFloat() {
+  const st = await api('/api/admin/settings');
+  const cur = (st.data || []).find(s => s.key === 'hotFloat')?.value;
+  const next = cur === 'off' ? 'on' : 'off';
+  await api('/api/admin/settings', { method: 'PUT', json: { entries: [{ key: 'hotFloat', value: next }] } });
+  flash(next === 'on' ? '🔥 常用上浮已开启（按点击频率排序）' : '常用上浮已关闭（恢复手动排序）');
+  loadAppearance();
+}
+async function runHealthcheck(btn) {
+  btn.disabled = true; btn.textContent = '🏥 检查中…';
+  $('hcSummary').textContent = '';
+  try {
+    const d = await api('/api/admin/healthcheck', { method: 'POST' });
+    const { total, dead, results } = d;
+    $('hcSummary').textContent = `共 ${total} 条 · ${dead} 条异常`;
+    $('hcResult').style.display = 'block';
+    $('hcResult').innerHTML = results.map(r => `<div style="display:flex;gap:8px;padding:4px 2px;font-size:12px;border-bottom:1px dashed var(--line)"><span style="color:${r.ok ? 'var(--accent)' : '#f87171'};font-weight:700;width:70px">${r.ok ? '✓ ' + r.code : '✗ ' + (r.code || '×')}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title)}</span><span style="color:var(--muted);width:90px;text-align:right">${r.note}</span></div>`).join('');
+    toast(dead ? `检查完成：${dead} 条异常` : `全部 ${total} 条链接健康 ✓`, dead ? 'err' : 'ok');
+  } catch (e2) { toast('健康检查失败：' + e2.message, 'err'); }
+  btn.disabled = false; btn.textContent = '🏥 链接健康检查';
+}
+async function loadPacks() {
+  try {
+    const packs = await api('/api/admin/packs');
+    $('packList').innerHTML = packs.map(p => `
+      <div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)">
+        <div style="font-size:15px;font-weight:700">${p.icon} ${esc(p.name)}</div>
+        <div style="font-size:12px;color:var(--muted);margin:6px 0 10px">${esc(p.desc)}</div>
+        <button class="btn sm" onclick="applyPack('${p.id}')">一键应用</button>
+      </div>`).join('');
+  } catch (e2) { $('packList').innerHTML = '<span style="color:var(--muted)">加载失败</span>'; }
+}
+async function applyPack(id) {
+  if (!confirm('将覆盖当前空间的主题令牌，确定？')) return;
+  await api(`/api/admin/packs/${id}/apply`, { method: 'POST', json: {} });
+  toast('✓ 主题包已应用，刷新前台查看', 'ok');
+  loadPacks();
+}
+async function loadInsights() {
+  const el = document.getElementById('insBody');
+  try {
+    const d = await api('/api/admin/insights');
+    const { top, trend, hours, recent, totalClicks, activeLinks } = d;
+    const maxT = Math.max(...trend.map(x => x.n), 1);
+    const trendBar = trend.length ? trend.map(x => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px"><div style="width:70%;height:${Math.max(4, x.n / maxT * 46)}px;background:linear-gradient(180deg,#2dd4bf,rgba(45,212,191,.3));border-radius:3px 3px 0 0;box-shadow:0 0 8px rgba(45,212,191,.3)" title="${x.day}: ${x.n} 次"></div><span style="font-size:10px;color:var(--muted)">${x.day.slice(5)}</span></div>`).join('') : '<span style="color:var(--muted)">近 7 天暂无点击</span>';
+    const topRows = top.length ? top.map((t, i) => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="color:var(--accent);font-weight:700;width:20px">${i + 1}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}</span><span style="color:var(--muted);font-size:12px">${t.category || ''}</span><span style="color:#2dd4bf;font-weight:700">${t.clicks}</span></div>`).join('') : '<span style="color:var(--muted)">还没有点击记录 · 去前台点几个链接，这里就会长出图表</span>';
+    const peak = hours.length ? hours.reduce((a, b) => b.n > a.n ? b : a) : null;
+    el.innerHTML = `
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="background:var(--accent-soft);border-radius:10px;padding:10px 16px"><div style="font-size:22px;font-weight:700;color:#2dd4bf">${totalClicks}</div><div style="font-size:11px;color:var(--muted)">累计点击</div></div>
+        <div style="background:var(--accent-soft);border-radius:10px;padding:10px 16px"><div style="font-size:22px;font-weight:700;color:#2dd4bf">${activeLinks}</div><div style="font-size:11px;color:var(--muted)">用过的链接</div></div>
+        ${peak ? `<div style="background:var(--accent-soft);border-radius:10px;padding:10px 16px"><div style="font-size:22px;font-weight:700;color:#2dd4bf">${peak.h}:00</div><div style="font-size:11px;color:var(--muted)">最活跃时段</div></div>` : ''}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">📈 近 7 天趋势</div>
+      <div style="display:flex;align-items:flex-end;gap:6px;height:64px;margin-bottom:16px">${trendBar}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">🏆 访问 TOP10</div>
+      ${topRows}
+      <div style="font-size:12px;color:var(--muted);margin:14px 0 6px">🕐 最近点击</div>
+      ${recent.map(r2 => `<div style="display:flex;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--muted)">${(r2.at || '').slice(11, 16)}</span><span>${esc(r2.title)}</span></div>`).join('') || '<span style="color:var(--muted)">暂无</span>'}`;
+  } catch (e) { el.textContent = '❌ ' + e.message; }
+}
+async function loadHotFloatState() {
+  try { const st = await api('/api/admin/settings'); const cur = (st.data || []).find(s => s.key === 'hotFloat')?.value;
+    document.getElementById('hfBtn').textContent = '🔥 常用上浮：' + (cur === 'off' ? '关' : '开');
+  } catch {}
+}
+async function loadAppearance() {
+  try {
+    const d = await api('/api/admin/appearance');
+    $('apName').value = d.site_name || '';
+    $('apPlaceholder').value = d.search_placeholder || '';
+    $('apFooter').value = d.footer_text || '';
+    let eng = d.search_engines || '';
+    try { eng = typeof JSON.parse(eng) === 'string' ? '' : JSON.stringify(JSON.parse(eng), null, 1); } catch { eng = ''; }
+    $('apEngines').value = eng === '""' ? '' : eng;
+    $('apCss').value = d.custom_css || '';
+  } catch (e) { $('apMsg').textContent = '加载失败: ' + e.message; }
+}
+async function saveAppearance() {
+  let engines = '';
+  const engRaw = $('apEngines').value.trim();
+  if (engRaw) { try { JSON.parse(engRaw); engines = engRaw; } catch { return showMsg('apMsg', '搜索引擎 JSON 格式错误', false); } }
+  const r = await api('/api/admin/appearance', { method: 'PUT', json: {
+    site_name: $('apName').value.trim(),
+    search_placeholder: $('apPlaceholder').value.trim(),
+    footer_text: $('apFooter').value.trim(),
+    search_engines: engines,
+    custom_css: $('apCss').value,
+  }});
+  showMsg('apMsg', r.code === 'OK' ? '✓ 已保存，刷新前台生效' : (r.message || '失败'), r.code === 'OK');
+}
+
+async function faStatus() {
+  try {
+    const d = await api('/api/admin/2fa/status');
+    const on = d.data?.enabled;
+    document.getElementById('faStatus').textContent = on ? '🟢 已启用（登录需输入验证器 6 位码）' : '⚪ 未启用';
+    document.getElementById('faSetup').style.display = on ? 'none' : 'block';
+    document.getElementById('faDisable').style.display = on ? 'block' : 'none';
+    if (!on && !document.getElementById('faSecret').value) {
+      const s = await api('/api/admin/2fa/setup', { method: 'POST', json: {} });
+      document.getElementById('faSecret').value = s.secret;
+      document.getElementById('faSecret').title = s.uri;
+    }
+  } catch (e) { document.getElementById('faStatus').textContent = '❌ ' + e.message; }
+}
+async function faEnable() {
+  const msg = document.getElementById('faMsg');
+  try {
+    await api('/api/admin/2fa/enable', { method: 'POST', json: { code: document.getElementById('faCode').value.trim() } });
+    msg.textContent = '✅ 已启用！下次登录需输入验证码'; faStatus();
+  } catch (e) { msg.textContent = '❌ ' + e.message; }
+}
+async function faDisable() {
+  try {
+    await api('/api/admin/2fa/disable', { method: 'POST', json: { code: document.getElementById('faOffCode').value.trim() } });
+    document.getElementById('faOffCode').value = ''; faStatus();
+  } catch (e) { showMsg('faMsg', e.message, false); }
+}
+async function changePass() {
+  const o = document.getElementById('pwOld').value, n = document.getElementById('pwNew').value, n2 = document.getElementById('pwNew2').value;
+  const msg = document.getElementById('pwMsg');
+  if (!o || !n) { msg.textContent = '❌ 请填写完整'; return; }
+  if (n !== n2) { msg.textContent = '❌ 两次新密码不一致'; return; }
+  try {
+    const r = await fetch('/api/admin/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPassword: o, newPassword: n }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      msg.textContent = '✅ 密码已修改，请牢记！';
+      document.getElementById('pwOld').value = document.getElementById('pwNew').value = document.getElementById('pwNew2').value = '';
+    } else msg.textContent = '❌ ' + (d.message || r.status);
+  } catch (e) { msg.textContent = '❌ ' + e.message; }
+}
+
+async function loadViewers() {
+  try {
+    const d = await api('/api/admin/viewers');
+    const t = $('vwTable').querySelector('tbody'); t.innerHTML = '';
+    (d.data || d || []).forEach(v => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${esc(v.username)}</td><td style="font-size:12px;color:var(--muted)">${esc(v.created_at || '')}</td>
+        <td><button class="btn sm danger" onclick="delViewer('${esc(v.username)}')">删除</button></td>`;
+      t.appendChild(tr);
+    });
+    if (!(d.data || d || []).length) t.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">暂无只读账号</td></tr>';
+  } catch (e) { $('vwMsg').textContent = '加载失败: ' + e.message; }
+}
+async function addViewer() {
+  const username = $('vwUser').value.trim(), password = $('vwPass').value;
+  if (!username || !password) { $('vwMsg').textContent = '用户名和密码都要填'; return; }
+  const r = await api('/api/admin/viewers', { method: 'POST', json: { username, password } });
+  $('vwMsg').textContent = r.code === 'OK' ? '✓ 已添加 ' + username : (r.message || '失败');
+  if (r.code === 'OK') { $('vwUser').value = ''; $('vwPass').value = ''; loadViewers(); }
+}
+async function delViewer(u) {
+  if (!confirm('删除只读账号 ' + u + '？')) return;
+  await api('/api/admin/viewers/' + encodeURIComponent(u), { method: 'DELETE' });
+  $('vwMsg').textContent = '✓ 已删除 ' + u; loadViewers();
+}
+async function loadWidgetData() {
+  const d = await api('/api/admin/widget-data');
+  const t = $('wdTable').querySelector('tbody'); t.innerHTML = '';
+  const rows = d.states || [];
+  if (!rows.length && !d.countdownCount) { t.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">暂无模块数据</td></tr>'; return; }
+  // 从空间布局推断 widget 类型
+  let typeMap = {};
+  try { for (const s of (await api('/api/admin/spaces'))) for (const el of JSON.parse(s.layout_json || '[]')) typeMap[el.id] = el.type; } catch {}
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const wtype = typeMap[r.widget_id] || '?';
+    tr.innerHTML = `<td>${WTYPES[wtype] || wtype} <span style="color:var(--muted);font-size:11px">#${r.widget_id}</span></td>
+      <td>${r.key}</td><td>${(r.bytes/1024).toFixed(1)} KB</td>
+      <td><button class="btn sm danger" onclick="clearWidgetData('${r.widget_id}','${r.key}')">清空</button></td>`;
+    t.appendChild(tr);
+  }
+  if (d.countdownCount) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>⏳ 倒计时（全局）</td><td>countdowns</td><td>${d.countdownCount} 条</td>
+      <td><button class="btn sm danger" onclick="clearCountdowns()">清空</button></td>`;
+    t.appendChild(tr);
+  }
+}
+async function clearWidgetData(id, key) {
+  if (!confirm(`确定清空模块 #${id} 的「${key}」数据？不可恢复！`)) return;
+  const r = await api(`/api/admin/widget-data/${id}/${key}`, { method: 'DELETE' });
+  $('wdMsg').textContent = r.code === 'OK' ? `✓ 已清空 ${r.cleared} 条` : '✗ ' + (r.message || '失败');
+  loadWidgetData();
+}
+async function clearCountdowns() {
+  if (!confirm('确定清空全部倒计时？不可恢复！')) return;
+  await api('/api/admin/widget-data/countdowns', { method: 'DELETE' });
+  $('wdMsg').textContent = '✓ 倒计时已清空';
+  loadWidgetData();
+}
+const ETYPES = { 'link.click':'🔗 链接点击', 'rule.fired':'🤖 规则触发', 'action.':'⚡ 动作执行', 'widget.toast':'💬 Toast', 'audit.':'📜 审计' };
+async function pruneEvents() {
+  if (!confirm('立即清理过期事件日志（普通>90天、审计>365天、超2万条截断）？')) return;
+  const r = await api('/api/admin/events/prune', { method: 'POST' });
+  showMsg('statMsg', r.code === 'OK' ? `✓ 已清理 ${r.data.deleted} 条` : (r.message || '失败'), r.code === 'OK');
+  loadStats();
+}
+async function loadStats() {
+  const d = await api('/api/admin/stats');
+  const t = d.totals;
+  $('statCards').innerHTML = [
+    ['🔗 链接', t.links], ['📁 分类', t.categories], ['🧭 空间', t.spaces],
+    ['👆 总点击', t.totalClicks], ['📋 事件', t.events], ['💾 数据库', (t.dbBytes/1024/1024).toFixed(2) + ' MB'],
+  ].map(([k,v]) => `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 16px;text-align:center"><div style="font-size:20px;font-weight:700">${v}</div><div style="font-size:11px;color:var(--muted)">${k}</div></div>`).join('');
+  // 趋势柱状图（纯 div）
+  const max = Math.max(...d.trend.map(x=>x.count), 1);
+  $('trendChart').innerHTML = d.trend.map(x => `<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px" title="${x.day}: ${x.count} 次">
+    <span style="font-size:10px;color:var(--muted)">${x.count || ''}</span>
+    <div style="width:100%;max-width:26px;height:${Math.max(x.count/max*70, 3)}px;background:var(--accent);opacity:${x.count ? .85 : .25};border-radius:3px 3px 0 0"></div>
+    <span style="font-size:9px;color:var(--muted)">${x.day.slice(8)}</span></div>`).join('');
+  // Top10 条形
+  const tmax = Math.max(...d.topLinks.map(x=>x.clicks), 1);
+  $('topLinks').innerHTML = d.topLinks.length ? d.topLinks.map(l => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+    <span style="width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${l.title}</span>
+    <div style="flex:1;height:14px;background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden">
+      <div style="width:${l.clicks/tmax*100}%;height:100%;background:var(--accent);border-radius:7px"></div></div>
+    <span style="font-size:11px;color:var(--muted);width:28px;text-align:right">${l.clicks}</span></div>`).join('') : '<span>暂无点击数据</span>';
+  // 事件分布
+  $('eventDist').innerHTML = d.eventDist.map(e => {
+    const label = Object.entries(ETYPES).find(([k]) => e.type.startsWith(k))?.[1] || e.type;
+    return `<span style="display:inline-block;margin:2px 6px 2px 0;padding:2px 8px;border:1px solid var(--line);border-radius:999px">${esc(label)} <b>${e.c}</b></span>`;
+  }).join('') || '<span>暂无事件</span>';
+  const re = d.recentEvents || [];
+  $('recentEvents').innerHTML = re.length ? re.map(e => {
+    const label = Object.entries(ETYPES).find(([k]) => e.type.startsWith(k))?.[1] || esc(e.type);
+    let detail = '';
+    try {
+      const p = JSON.parse(e.payload_json || '{}');
+      if (e.type.startsWith('audit.')) detail = e.type.replace('audit.', '') + (p.title ? ' 「' + p.title + '」' : '');
+      else detail = p.message || p.title || (p.linkId ? '#' + p.linkId : '');
+    } catch {}
+    return `<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px dashed var(--line);align-items:baseline">
+      <span style="color:var(--muted);font-size:11px;white-space:nowrap">${esc((e.created_at || '').slice(5, 16))}</span>
+      <span style="white-space:nowrap">${label}</span>
+      <span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(detail)}</span>
+    </div>`;
+  }).join('') : '<span style="color:var(--muted)">暂无事件</span>';
+}
+async function loadBackups() {
+  try {
+    const list = await api('/api/admin/backups');
+    $('bkTable').querySelector('tbody').innerHTML = list.length ? list.map(b => `<tr>
+      <td><code style="font-size:11px">${b.file}</code></td>
+      <td>${(b.size / 1024).toFixed(1)} KB</td>
+      <td style="font-size:12px">${new Date(b.created_at).toLocaleString()}</td>
+      <td><a class="btn sm ghost" href="/api/admin/backups/${b.file}" download style="text-decoration:none">下载</a></td>
+    </tr>`).join('') : '<tr><td colspan="4" style="color:var(--muted);font-size:12px">暂无备份</td></tr>';
+  } catch (e) { showMsg('bkMsg', e.message, false); }
+}
+async function backupNow() {
+  try {
+    const d = await api('/api/admin/backups', { method: 'POST' });
+    showMsg('bkMsg', `✓ 已备份 ${d.file.split('/').pop()}`, true);
+    loadBackups();
+  } catch (e) { showMsg('bkMsg', e.message, false); }
+}
+loadBackups();
+
+// ---- Widget 市场 ----
+async function loadMarket() {
+  try {
+    const d = await api('/api/market');
+    const tb = $('mkTable').querySelector('tbody');
+    tb.innerHTML = d.map(w => `<tr>
+      <td>${esc(w.icon)}</td><td><code>${esc(w.id)}</code></td><td>${esc(w.name)}</td><td>v${esc(w.version)}</td>
+      <td style="font-size:12px;color:var(--muted)">${esc(w.desc)}</td>
+      <td>${w.installed ? '✅ 已安装' : (w.builtin ? '📦 内置' : '—')}</td>
+      <td>${w.builtin ? `<a class=\"btn sm ghost\" href=\"/editor/editor.html\" style=\"text-decoration:none\" title=\"到编辑器中添加到布局\">＋ 添加</a>` : `<button class="btn sm ghost" onclick="toggleWidget('${w.id}')">${w.disabled ? '▶️ 启用' : '⏸️ 停用'}</button>
+      <button class="btn sm ghost" onclick="uninstallWidget('${w.id}')">卸载</button>
+      <button class="btn sm ghost" onclick="editCode('${w.id}')">代码</button>`}</td>
+    </tr>`).join('');
+  } catch (e) { showMsg('mkMsg', e.message, false); }
+}
+async function installWidget() {
+  try {
+    const manifest = JSON.parse($('mkManifest').value);
+    const d = await api('/api/market/install', { method: 'POST', json: { manifest } });
+    showMsg('mkMsg', `✓ 已安装 ${d.icon} ${d.name} v${d.version}`, true);
+    loadMarket();
+  } catch (e) {
+    const detail = e.errors ? '：' + e.errors.join('；') : '';
+    showMsg('mkMsg', '✗ ' + e.message + detail, false);
+  }
+}
+async function toggleWidget(id) {
+  const r = await api('/api/market/toggle', { method: 'POST', json: { id } });
+  if (r.code === 'OK') { showMsg('mkMsg', `✓ ${id} 已${r.data.disabled ? '停用' : '启用'}`, true); loadMarket(); }
+  else showMsg('mkMsg', r.message || '失败');
+}
+async function uninstallWidget(id) {
+  if (!confirm(`卸载 ${id}？同时会从所有空间布局中移除该 widget。`)) return;
+  await api('/api/market/uninstall', { method: 'POST', json: { id } });
+  showMsg('mkMsg', '✓ 已卸载 ' + id, true);
+  loadMarket();
+}
+async function editCode(id) {
+  const code = prompt(`输入 ${id} 的运行时 JS 代码（可用 navsite.setState/getProps/toast 和 root 元素）：`,
+    localStorage.getItem('navsite.code.' + id) || `root.innerHTML = '<b>Hello from ${id}</b>';
+navsite.toast('widget 启动');
+// 点击计数持久化
+let n = 0;
+root.onclick = () => navsite.setState({ clicks: ++n });`);
+  if (code === null) return;
+  localStorage.setItem('navsite.code.' + id, code);
+  try {
+    await api(`/api/widget-runtime/${id}/code`, { method: 'POST', json: { code } });
+    showMsg('mkMsg', `✓ ${id} 运行时代码已保存（刷新前台生效）`, true);
+  } catch (e) { showMsg('mkMsg', '✗ ' + e.message, false); }
+}
+loadMarket();
+
+// 导入配置包
+async function importConfig() {
+  const f = $('cfgFile').files[0];
+  if (!f) return showMsg('cfgMsg', '请先选择导出的 JSON 文件', false);
+  showMsg('cfgMsg', '导入中…', true);
+  try {
+    const dump = JSON.parse(await f.text());
+    const mode = confirm('选择导入模式：\n\n确定=merge（追加，URL 去重）\n取消=full（清空全部后重建！）');
+    let body;
+    if (mode) body = { dump, mode: 'merge' };
+    else {
+      const t = prompt('full 模式将清空全部数据！输入 REPLACE ALL DATA 确认：');
+      if (t !== 'REPLACE ALL DATA') return showMsg('cfgMsg', '已取消', false);
+      body = { dump, mode: 'full', confirm: true, confirm_text: 'REPLACE ALL DATA' };
+    }
+    const d = await api('/api/admin/import', { method: 'POST', json: body });
+    const s = d.data;
+    showMsg('cfgMsg', `✓ 导入完成：分类 ${s.categories}，链接 ${s.links}（跳过重复 ${s.linksSkipped}），空间 ${s.spaces}（跳过重名 ${s.spacesSkipped}），设置 ${s.settings}`, true);
+    await loadAll();
+  } catch (e) { showMsg('cfgMsg', e.message, false); }
+}
+</script>
+<!-- 链接编辑模态框 -->
+<div id="linkModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:flex-start;justify-content:center;padding-top:12vh" onclick="if(event.target===this)closeLinkModal()">
+  <div style="background:var(--card,#fff);border:1px solid var(--line,#ddd);border-radius:14px;padding:22px;width:min(440px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <h3 style="margin:0 0 14px">✏️ 编辑链接</h3>
+    <div class="row" style="margin-bottom:10px"><input id="mTitle" placeholder="标题" style="flex:1"></div>
+    <div class="row" style="margin-bottom:10px"><input id="mUrl" placeholder="https://…" style="flex:1"></div>
+    <div class="row" style="margin-bottom:10px"><input id="mDesc" placeholder="描述（可选）" style="flex:1"></div>
+    <div class="row" style="margin-bottom:10px">
+      <label style="white-space:nowrap">移动到分类</label>
+      <select id="mCat" style="flex:1"></select>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="mVis"> 前台可见</label>
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeLinkModal()">取消</button>
+      <button class="btn primary" onclick="saveLinkModal()">保存</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
