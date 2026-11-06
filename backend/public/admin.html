@@ -1069,6 +1069,31 @@ async function importConfig() {
   </div>
 </div>
 
+
+<div id="postModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:998;align-items:center;justify-content:center">
+  <div style="background:var(--card,#141a26);border-radius:14px;width:min(1180px,96vw);height:88vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.1);gap:10px">
+      <b id="pmTitle">✍️ 撰写文章</b>
+      <div style="display:flex;gap:10px;align-items:center;font-size:12.5px">
+        <span id="pmCount" style="opacity:.6"></span>
+        <span id="pmSaved" style="opacity:.5"></span>
+        <button class="btn ghost" onclick="closePostModal()">✕ 关闭</button>
+        <button class="btn" onclick="savePostModal()">💾 发布</button>
+      </div>
+    </div>
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:1;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.1);min-width:0">
+        <div style="display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.08);align-items:center;font-size:12px">
+          <label class="btn ghost" style="margin:0;cursor:pointer">🖼 插图<input type="file" id="pmImg" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none"></label>
+          <span id="pmImgMsg" style="opacity:.6"></span>
+        </div>
+        <input id="pmHead" placeholder="标题" style="border:0;border-bottom:1px solid rgba(255,255,255,.1);background:transparent;color:inherit;padding:12px 16px;font-size:17px;outline:none">
+        <textarea id="pmBody" placeholder="正文，Markdown 语法。**粗体** · *斜体* · \`代码\` · [链接](url) · # 标题 · - 列表" spellcheck="false" style="flex:1;border:0;background:transparent;color:inherit;padding:14px 16px;font-family:ui-monospace,monospace;font-size:13.5px;line-height:1.7;resize:none;outline:none"></textarea>
+      </div>
+      <div style="flex:1;overflow:auto;padding:16px 20px" id="pmPreview"><span style="opacity:.4">预览区（右侧实时渲染）</span></div>
+    </div>
+  </div>
+</div>
 <div id="codeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;align-items:center;justify-content:center">
   <div style="background:var(--card,#1a1f2e);border-radius:12px;padding:16px;width:min(760px,92vw);max-height:86vh;display:flex;flex-direction:column;gap:10px">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1113,7 +1138,7 @@ async function cmsLoad() {
           <b>${c.icon} ${c.name} <span style="opacity:.55;font-size:12px">· ${c.fields.length} 字段</span> <a href="/archive/${c.id}" target="_blank" style="font-size:12px;margin-left:8px">🗓 归档页</a><a href="/feed/${c.id}.xml" target="_blank" style="font-size:12px;margin-left:6px">📡 RSS</a></b>
           <div style="display:flex;gap:6px">
             <button class="btn ghost" onclick="cmsEditFields(${c.id})">⚙ 字段</button>
-            <button class="btn ghost" onclick="cmsNewItem(${c.id})">＋ 录入</button>
+            <button class="btn ghost" onclick="cmsNewItem(${c.id})">＋ 录入</button><button class="btn" onclick="openPostModal(${c.id}, null, () => cmsLoad())">✍️ 写文章</button>
             <button class="btn ghost" onclick="cmsDel(${c.id})">🗑</button>
           </div>
         </div>
@@ -1132,7 +1157,7 @@ async function cmsLoadItems(c) {
       `<tr><td style="padding:4px 6px;border-top:1px solid rgba(255,255,255,.08)"><b>${esc(String(it[titleKey] ?? '（无标题）')).slice(0, 60)}</b>${it._draft ? ' <span style="font-size:11px;opacity:.6">📝 草稿</span>' : ''}</td>
        <td style="border-top:1px solid rgba(255,255,255,.08);opacity:.6">${esc(String(it[c.fields[1]?.key] ?? '')).slice(0, 60)}</td>
        <td style="border-top:1px solid rgba(255,255,255,.08);text-align:right;white-space:nowrap">
-         <button class="btn ghost" style="padding:2px 8px" onclick="cmsEditItem(${c.id},${it.id})">编辑</button>
+         <button class="btn ghost" style="padding:2px 8px" onclick="cmsEditItem(${c.id},${it.id})">编辑</button><button class="btn ghost" style="padding:2px 8px" onclick="cmsEditPost(${c.id},${it.id})">✍️</button>
          <button class="btn ghost" style="padding:2px 8px" onclick="cmsDelItem(${c.id},${it.id})">删</button></td></tr>`).join('') + '</table>';
   } catch (e) { box.innerHTML = '✗ ' + e.message; }
 }
@@ -1176,6 +1201,15 @@ async function cmsEditFields(id) {
   catch (e) { showMsg('mkMsg', '✗ ' + e.message, false); }
 }
 async function cmsNewItem(id) { cmsItemForm(id, null); }
+async function cmsEditPost(colId, itemId) {
+  const items = await api('/api/admin/collections/' + colId + '/items') || [];
+  const it = items.find(x => x.id === itemId);
+  if (!it) return;
+  // 恢复未发布的自动保存稿
+  const ls = localStorage.getItem('pm.draft.' + colId + '.' + itemId);
+  if (ls) { try { const d = JSON.parse(ls); if (confirm('检测到未发布的自动保存稿（' + new Date(d.at).toLocaleString() + '），恢复吗？')) { it.title = d.h; it.desc = d.b; } } catch {} }
+  openPostModal(colId, it, () => cmsLoad());
+}
 async function cmsEditItem(id, itemId) {
   const items = await api('/api/admin/collections/' + id + '/items') || [];
   cmsItemForm(id, items.find(x => x.id === itemId));
@@ -1205,6 +1239,109 @@ async function cmsDelItem(id, itemId) {
   if (!confirm('删除该条目？')) return;
   await api('/api/admin/collections/' + id + '/items/' + itemId, { method: 'DELETE' }); cmsLoad();
 }
+</script>
+<script>
+// ===== 全屏文章编辑器 =====
+let _pmCtx = null; // {colId, itemId|null, onSave}
+function mdMini(src) {
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inline = s => esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  let html = '', inList = false, inCode = false;
+  for (const raw of String(src||'').split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    if (line.startsWith('```')) { if (inCode) { html += '</code></pre>'; inCode = false; } else { html += '<pre><code>'; inCode = true; } continue; }
+    if (inCode) { html += esc(raw) + '\n'; continue; }
+    if (/^[-*] /.test(line)) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + inline(line.slice(2)) + '</li>'; continue; }
+    if (inList) { html += '</ul>'; inList = false; }
+    const h = /^(#{1,4}) (.+)/.exec(line);
+    if (h) { const lv = h[1].length; html += `<h${lv}>` + inline(h[2]) + `</h${lv}>`; continue; }
+    if (!line.trim()) continue;
+    html += '<p>' + inline(line) + '</p>';
+  }
+  if (inList) html += '</ul>';
+  if (inCode) html += '</code></pre>';
+  return html;
+}
+let _pmTimer = null;
+function openPostModal(colId, item, onSaved) {
+  _pmCtx = { colId, itemId: item ? item.id : null, onSaved };
+  if (!item) { const ls = localStorage.getItem('pm.draft.' + colId + '.new'); if (ls) { try { const d = JSON.parse(ls); if (confirm('检测到上次未发布的草稿（' + new Date(d.at).toLocaleString() + '），恢复吗？')) { item = { title: d.h, desc: d.b }; } } catch {} } }
+  $('pmTitle').textContent = item ? '✏️ 编辑：' + (item.title || '（无标题）') : '✍️ 撰写文章';
+  $('pmHead').value = item ? (item.title || '') : '';
+  $('pmBody').value = item ? (item.desc || '') : '';
+  $('pmSaved').textContent = '';
+  pmRefresh();
+  $('postModal').style.display = 'flex';
+  if (item && item.id) $('pmBody').focus();
+}
+function closePostModal() {
+  if (_pmCtx && $('pmBody').value.trim()) localStorage.setItem('pm.draft.' + _pmCtx.colId + '.' + (_pmCtx.itemId || 'new'), JSON.stringify({h: $('pmHead').value, b: $('pmBody').value, at: Date.now()}));
+  $('postModal').style.display = 'none'; _pmCtx = null;
+}
+function pmRefresh() {
+  const b = $('pmBody').value;
+  $('pmCount').textContent = b.length ? (b.length + ' 字') : '';
+  $('pmPreview').innerHTML = b.trim() ? mdMini(b) : '<span style="opacity:.4">预览区（右侧实时渲染）</span>';
+}
+function savePostModal() {
+  if (!_pmCtx) return;
+  const title = $('pmHead').value.trim();
+  if (!title) { $('pmSaved').textContent = '⚠️ 标题必填'; return; }
+  const body = { title, desc: $('pmBody').value };
+  const done = (d) => {
+    localStorage.removeItem('pm.draft.' + _pmCtx.colId + '.' + (_pmCtx.itemId || 'new'));
+    $('pmSaved').textContent = '✓ 已保存 ' + new Date().toLocaleTimeString();
+    const cb = _pmCtx.onSaved; closePostModal();
+    if (cb) cb(d);
+  };
+  if (_pmCtx.itemId) api('/api/admin/collections/' + _pmCtx.colId + '/items/' + _pmCtx.itemId, { method: 'PUT', json: body }).then(done).catch(e => $('pmSaved').textContent = '✗ ' + e.message);
+  else api('/api/admin/collections/' + _pmCtx.colId + '/items', { method: 'POST', json: body }).then(done).catch(e => $('pmSaved').textContent = '✗ ' + e.message);
+}
+document.addEventListener('input', e => {
+  if (!_pmCtx) return;
+  if (e.target.id === 'pmBody') {
+    pmRefresh();
+    clearTimeout(_pmTimer);
+    _pmTimer = setTimeout(() => {
+      localStorage.setItem('pm.draft.' + _pmCtx.colId + '.' + (_pmCtx.itemId || 'new'), JSON.stringify({h: $('pmHead').value, b: $('pmBody').value, at: Date.now()}));
+      $('pmSaved').textContent = '· 已自动保存 ' + new Date().toLocaleTimeString();
+    }, 1200);
+  }
+  if (e.target.id === 'pmHead') {
+    clearTimeout(_pmTimer);
+    _pmTimer = setTimeout(() => {
+      localStorage.setItem('pm.draft.' + _pmCtx.colId + '.' + (_pmCtx.itemId || 'new'), JSON.stringify({h: $('pmHead').value, b: $('pmBody').value, at: Date.now()}));
+      $('pmSaved').textContent = '· 已自动保存';
+    }, 1200);
+  }
+});
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's' && _pmCtx) { e.preventDefault(); savePostModal(); }
+});
+
+
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'pmImg' || !_pmCtx || !e.target.files[0]) return;
+  const f = e.target.files[0];
+  $('pmImgMsg').textContent = '⏳ 上传中…';
+  try {
+    const r = await fetch('/api/admin/upload', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': f.type }, body: f });
+    const d = await r.json();
+    if (d.code === 'OK') {
+      const ta = $('pmBody');
+      const insert = '\n![图片](' + d.data.url + ')\n';
+      const pos = ta.selectionStart || ta.value.length;
+      ta.value = ta.value.slice(0, pos) + insert + ta.value.slice(pos);
+      pmRefresh();
+      $('pmImgMsg').textContent = '✓ 已插入';
+    } else $('pmImgMsg').textContent = '✗ ' + (d.message || '失败');
+  } catch (err) { $('pmImgMsg').textContent = '✗ ' + err.message; }
+  e.target.value = '';
+});
 </script>
 </body>
 </html>

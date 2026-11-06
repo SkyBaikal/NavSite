@@ -51,6 +51,9 @@ app.use((_req, res, next) => {
   next();
 });
 
+import { uploadRouter } from './routes/upload.js';
+app.use('/api/admin', uploadRouter);
+app.use('/uploads', express.static(path.resolve(__dirname, '../../data/uploads'), { maxAge: '7d', immutable: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -180,6 +183,7 @@ app.use('/garden', express.static(path.join(__dirname, '../public-garden'), { in
 const distDir = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(distDir));
 
+// ===== 图片上传（站长登录）=====
 // ===== CMS 阅读页（详情/归档，纯后端渲染，零 CDN）=====
 function mdRender(src: string): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
