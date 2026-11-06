@@ -1657,7 +1657,11 @@ mqPwa.addEventListener?.('change', applyPwa);
         <iframe v-if="!loading" :src="'/api/widget-runtime/' + widget.extId" style="width:100%;height:100%;min-height:120px;border:0;display:block" sandbox="allow-scripts" ref="frame"></iframe>
       </div>`,
     };
-    return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, ExtWidget, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly, focusMode };
+        const canWrite = ref(false);
+    onMounted(async () => {
+      try { const d = await fetch('/api/admin/me', { credentials: 'same-origin' }).then(r => r.json()); canWrite.value = d.code === 'OK'; } catch {}
+    });
+return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry, ExtWidget, resolveWidget, soundOn, toggleSound, spaceDir, appearance, readonly, focusMode, canWrite };
   },
   template: `
     <div class="app">
@@ -1676,6 +1680,7 @@ mqPwa.addEventListener?.('change', applyPwa);
       </main>
       <div class="loading" v-else>加载中…</div>
       <button class="focus-btn" :class="{ on: focusMode }" @click="focusMode = !focusMode" :title="focusMode ? '退出专注模式' : '专注模式'">🎯</button>
+      <a v-if="canWrite && !readonly" class="write-btn" href="/admin/" title="去后台写文章">✍️</a>
       <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a> · <a href="/archive" target="_blank" class="foot-link">🗂 归档</a> · <a href="/feed.xml" target="_blank" class="foot-link">📡 RSS</a></footer>
       <footer class="foot" v-else>👁 只读分享页 · 由 NavSite 生成</footer>
       <cmd-palette />
@@ -1845,6 +1850,9 @@ body.pwa-standalone .toast { bottom: 70px; }
 body.focus-mode .topbar .clock-sub, body.focus-mode .foot, body.focus-mode .hud-overlay, body.focus-mode .focus-btn { opacity: 0; pointer-events: none; }
 body.focus-mode .topbar, body.focus-mode .foot { transition: opacity .4s; }
 .focus-btn { position: fixed; right: 14px; bottom: 14px; z-index: 60; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #8b93a7; font-size: 15px; cursor: pointer; backdrop-filter: blur(10px); transition: all .25s; }
+.write-btn { position: fixed; right: 56px; bottom: 14px; z-index: 60; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #cdd8e6; font-size: 14px; cursor: pointer; backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all .2s; }
+.write-btn:hover { background: rgba(255,255,255,.16); transform: translateY(-2px); color: #fff; }
+
 .focus-btn:hover { border-color: rgba(45,212,191,.5); color: #2dd4bf; }
 .focus-btn.on { background: rgba(20,184,166,.2); color: #2dd4bf; border-color: rgba(45,212,191,.6); box-shadow: 0 0 12px rgba(20,184,166,.35); }
 .note-convert { margin-top: 6px; padding: 4px 14px; border: 1px solid rgba(45,212,191,.35); border-radius: 8px; background: rgba(45,212,191,.08); color: #2dd4bf; font-size: 12px; cursor: pointer; transition: all .2s; }
