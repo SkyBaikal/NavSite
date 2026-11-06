@@ -285,6 +285,48 @@ app.get('/c/:key/:id', (req, res) => {
   res.send(pageShell(title, body));
 });
 
+// ===== RSS 输出（全站/单集合）=====
+function escXml(s: string): string {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function rssFeed(req: any, cols: any[]): string {
+  const host = String(req.headers.host || 'localhost');
+  const proto = String(req.headers['x-forwarded-proto'] || 'http');
+  const base = proto + '://' + host;
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel>\n' +
+    '<title>NavSite 内容订阅</title><link>' + base + '/archive</link>' +
+    '<description>NavSite 内容集合最新条目</description><language>zh-CN</language>\n';
+  for (const c of cols) {
+    const items = db.prepare('SELECT id, data_json, created_at FROM collection_items WHERE collection_id = ? ORDER BY created_at DESC, id DESC LIMIT 30').all(c.id) as any[];
+    for (const it of items) {
+      const d = JSON.parse(it.data_json || '{}');
+      const t = String(d.title || d.name || '（无标题）');
+      const url = base + '/c/' + c.id + '/' + it.id;
+      const desc = String(d.desc || '').slice(0, 500);
+      xml += '<item><title>' + escXml(c.name + '：' + t) + '</title>' +
+        '<link>' + escXml(url) + '</link>' +
+        '<guid>' + escXml(url) + '</guid>' +
+        '<pubDate>' + new Date(String(it.created_at).replace(' ', 'T') + 'Z').toUTCString() + '</pubDate>' +
+        (desc ? '<description>' + escXml(desc) + '</description>' : '') +
+        '</item>\n';
+    }
+  }
+  return xml + '</channel></rss>';
+}
+app.get(['/feed.xml', '/feed/:key.xml'], (req, res) => {
+  res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
+  const key = (req.params as any).key;
+  let cols: any[] = [];
+  if (key) {
+    const c = db.prepare('SELECT id, name, icon FROM collections WHERE name = ? OR id = ?').get(key, /^\d+$/.test(key) ? Number(key) : -1) as any;
+    if (!c) return res.status(404).type('text').send('collection not found');
+    cols = [c];
+  } else {
+    cols = db.prepare('SELECT id, name, icon FROM collections ORDER BY id').all() as any[];
+  }
+  res.send(rssFeed(req, cols));
+});
+
 // SPA 兜底：非 /api 路径回 index.html
 app.get(/^\/(?!api|admin|garden).*/, (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));

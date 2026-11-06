@@ -168,8 +168,9 @@ const SANDBOX_TEMPLATE = `<!DOCTYPE html><html><head><meta charset="utf-8"></hea
         if (d.code !== 'OK') return '';
         const items = d.data;
         const g = (it, k) => it[k] ?? it.data?.[k] ?? '';
-        if (tpl === 'cards') return items.map(it => '<div class="ns-card"><b>' + (g(it,'title') || g(it,'name') || '条目') + '</b>' + (g(it,'desc') ? '<p>' + g(it,'desc') + '</p>' : '') + '</div>').join('');
-        if (tpl === 'list') return '<ul>' + items.map(it => '<li>' + (g(it,'title') || g(it,'name') || '条目') + (g(it,'desc') ? ' — ' + g(it,'desc') : '') + '</li>').join('') + '</ul>';
+        const link = (it, inner) => '<a href="/c/' + (it._col || '') + '/' + it.id + '" target="_blank" style="color:inherit;text-decoration:none;display:block">' + inner + '</a>';
+        if (tpl === 'cards') return items.map(it => link(it, '<div class="ns-card"><b>' + (g(it,'title') || g(it,'name') || '条目') + '</b>' + (g(it,'desc') ? '<p>' + String(g(it,'desc')).slice(0, 120) + '</p>' : '') + '</div>')).join('');
+        if (tpl === 'list') return '<ul>' + items.map(it => '<li>' + link(it, (g(it,'title') || g(it,'name') || '条目') + (g(it,'desc') ? ' — ' + String(g(it,'desc')).slice(0, 60) : '')) + '</li>').join('') + '</ul>';
         return '<pre>' + JSON.stringify(items, null, 2).slice(0, 4000) + '</pre>';
       }),
     }),
