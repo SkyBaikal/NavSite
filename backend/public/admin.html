@@ -1110,7 +1110,7 @@ async function cmsLoad() {
     box.innerHTML = _cmsCols.map(c => `
       <div class="dash-card" style="margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <b>${c.icon} ${c.name} <span style="opacity:.55;font-size:12px">· ${c.fields.length} 字段</span></b>
+          <b>${c.icon} ${c.name} <span style="opacity:.55;font-size:12px">· ${c.fields.length} 字段</span> <a href="/archive/${c.id}" target="_blank" style="font-size:12px;margin-left:8px">🗓 归档页</a></b>
           <div style="display:flex;gap:6px">
             <button class="btn ghost" onclick="cmsEditFields(${c.id})">⚙ 字段</button>
             <button class="btn ghost" onclick="cmsNewItem(${c.id})">＋ 录入</button>
@@ -1154,7 +1154,8 @@ function fieldFormHTML(fields, data) {
     const inp = f.type === 'textarea'
       ? `<textarea name="${f.key}" rows="4" style="width:100%">${esc(String(v))}</textarea>`
       : `<input name="${f.key}" type="${f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}" value="${esc(String(v))}" style="width:100%">`;
-    return `<label style="display:block;margin-bottom:8px"><span style="font-size:12px;opacity:.7">${f.label || f.key}${f.required ? ' *' : ''}</span>${inp}</label>`;
+    const hint = f.type === 'textarea' ? '<span style="font-size:11px;opacity:.55;display:block;margin-top:3px">📝 支持 Markdown：**粗体** · *斜体* · `代码` · [链接](url) · # 标题 · - 列表 · 代码块</span>' : '';
+    return `<label style="display:block;margin-bottom:8px"><span style="font-size:12px;opacity:.7">${f.label || f.key}${f.required ? ' *' : ''}</span>${inp}${hint}</label>`;
   }).join('');
 }
 function collectForm(form) {
