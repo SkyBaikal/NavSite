@@ -212,10 +212,13 @@ function mdRender(src: string): string {
   if (inCode) html += '</code></pre>';
   return html;
 }
-function pageShell(title: string, body: string, backLink = true): string {
+function pageShell(title: string, body: string, backLink = true, opts: { desc?: string; index?: boolean } = {}): string {
   const t = title.replace(/</g, '&lt;');
+  const desc = String(opts.desc || '').replace(/<[^>]*>/g, '').slice(0, 160).replace(/"/g, '&quot;');
+  const metaTags = (opts.index ? '<meta name="robots" content="index,follow">' : '<meta name="robots" content="noindex">')
+    + (desc ? `<meta name="description" content="${desc}">\n<meta property="og:title" content="${t}">\n<meta property="og:description" content="${desc}">\n<meta property="og:type" content="article">` : '');
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>${t} · NavSite</title>
+${metaTags}<title>${t} · NavSite</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -249,7 +252,8 @@ app.get(['/archive', '/archive/:key'], (req, res) => {
   if (key && !cols[0]) return res.status(404).send(pageShell('404', '<div class="empty">集合不存在</div>', false));
   let body = '<h1>🗓️ 归档</h1>';
   for (const c of cols) {
-    const items = db.prepare('SELECT id, data_json, created_at FROM collection_items WHERE collection_id = ? ORDER BY created_at DESC, id DESC').all(c.id) as any[];
+    const allItems = db.prepare('SELECT id, data_json, created_at FROM collection_items WHERE collection_id = ? ORDER BY created_at DESC, id DESC').all(c.id) as any[];
+    const items = allItems.filter((it: any) => { try { return !JSON.parse(it.data_json || '{}')._draft; } catch { return true; } });
     body += `<h2 style="margin-top:1.4em">${c.icon} ${c.name} <span style="font-size:.55em;opacity:.5">${items.length} 篇</span></h2>`;
     if (!items.length) { body += '<div class="empty">暂无内容</div>'; continue; }
     body += '<ul class="arch">' + items.map((it: any) => {
@@ -277,12 +281,13 @@ app.get('/c/:key/:id', (req, res) => {
     if (v === undefined || v === '' || v === null) continue;
     const safe = String(v).replace(/</g, '&lt;');
     if (f.type === 'url' && /^https?:/.test(String(v))) { body += `<div class="meta">&#128279; <a href="${String(v).replace(/"/g, '&quot;')}" target="_blank" rel="noopener">${safe.slice(0, 80)}</a></div>`; continue; }
+    if (f.type === 'image') { body += `<img src="${String(v).replace(/"/g, '&quot;')}" style="max-width:100%;border-radius:10px;margin:8px 0" alt="${f.label || f.key}">`; continue; }
     if (f.type === 'textarea') { body += '<div class="card">' + mdRender(String(v)) + '</div>'; continue; }
     body += `<div class="meta">${f.label || f.key}：${safe}</div>`;
   }
   if (data.desc) body += '<div class="card">' + mdRender(String(data.desc)) + '</div>';
   body += `<p style="margin-top:36px"><a href="/archive/${col.id}">&#128197; 该集合全部内容 &#8594;</a></p>`;
-  res.send(pageShell(title, body));
+  res.send(pageShell(title, body, true, { desc: String(data.desc || title), index: !data._draft }));
 });
 
 // ===== RSS 输出（全站/单集合）=====

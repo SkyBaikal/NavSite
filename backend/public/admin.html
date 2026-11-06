@@ -1129,7 +1129,7 @@ async function cmsLoadItems(c) {
     if (!items.length) { box.innerHTML = '<div style="opacity:.5;font-size:12px">空集合，点「＋ 录入」添加第一条</div>'; return; }
     const titleKey = c.fields[0]?.key || 'title';
     box.innerHTML = '<table style="width:100%;font-size:12.5px">' + items.map(it =>
-      `<tr><td style="padding:4px 6px;border-top:1px solid rgba(255,255,255,.08)"><b>${esc(String(it[titleKey] ?? '（无标题）')).slice(0, 60)}</b></td>
+      `<tr><td style="padding:4px 6px;border-top:1px solid rgba(255,255,255,.08)"><b>${esc(String(it[titleKey] ?? '（无标题）')).slice(0, 60)}</b>${it._draft ? ' <span style="font-size:11px;opacity:.6">📝 草稿</span>' : ''}</td>
        <td style="border-top:1px solid rgba(255,255,255,.08);opacity:.6">${esc(String(it[c.fields[1]?.key] ?? '')).slice(0, 60)}</td>
        <td style="border-top:1px solid rgba(255,255,255,.08);text-align:right;white-space:nowrap">
          <button class="btn ghost" style="padding:2px 8px" onclick="cmsEditItem(${c.id},${it.id})">编辑</button>
@@ -1153,6 +1153,8 @@ function fieldFormHTML(fields, data) {
     const v = data?.[f.key] ?? '';
     const inp = f.type === 'textarea'
       ? `<textarea name="${f.key}" rows="4" style="width:100%">${esc(String(v))}</textarea>`
+      : f.type === 'image'
+      ? `<input name="${f.key}" type="text" value="${esc(String(v))}" placeholder="图片 URL（https:// 或 / 开头）" style="width:100%">${v ? `<img src="${esc(String(v))}" style="max-height:80px;border-radius:6px;margin-top:4px" onerror="this.style.display='none'">` : ''}`
       : `<input name="${f.key}" type="${f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}" value="${esc(String(v))}" style="width:100%">`;
     const hint = f.type === 'textarea' ? '<span style="font-size:11px;opacity:.55;display:block;margin-top:3px">📝 支持 Markdown：**粗体** · *斜体* · `代码` · [链接](url) · # 标题 · - 列表 · 代码块</span>' : '';
     return `<label style="display:block;margin-bottom:8px"><span style="font-size:12px;opacity:.7">${f.label || f.key}${f.required ? ' *' : ''}</span>${inp}${hint}</label>`;
@@ -1181,6 +1183,7 @@ async function cmsEditItem(id, itemId) {
 function cmsItemForm(id, item) {
   const c = _cmsCols.find(x => x.id === id);
   const html = `<form id="cmsForm" style="display:flex;flex-direction:column;gap:4px">${fieldFormHTML(c.fields, item)}
+    <label style="font-size:12.5px;display:flex;align-items:center;gap:6px"><input type="checkbox" name="_draft" value="1" ${item && item._draft ? 'checked' : ''}> 📝 存为草稿（前台不显示）</label>
     <div style="display:flex;gap:8px"><button class="btn" type="submit">${item ? '保存修改' : '录入'}</button>
     <button class="btn ghost" type="button" onclick="this.closest('.dash-card').querySelector('#cmsItemPanel').remove()">取消</button></div></form>`;
   let panel = document.getElementById('cmsItemPanel');

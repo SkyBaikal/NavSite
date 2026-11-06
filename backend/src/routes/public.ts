@@ -337,7 +337,8 @@ publicRouter.get('/collections/:key/items', (req, res) => { res.setHeader('Acces
   const key = String(req.params.key || '');
   const col = /^\d+$/.test(key) ? colStmt.getCol.get(Number(key)) as any : colStmt.getColByName.get(key) as any;
   if (!col) return res.status(404).json({ code: 'NOT_FOUND', message: '集合不存在' });
-  const items = (colStmt.items.all(col.id) as any[]).map(r => ({ id: r.id, ...JSON.parse(r.data_json || '{}'), _sort: r.sort_order, _created: r.created_at, _col: col.id }));
+  const rows = (colStmt.items.all(col.id) as any[]).filter(r => { try { return !JSON.parse(r.data_json || '{}')._draft; } catch { return true; } });
+  const items = rows.map(r => ({ id: r.id, ...JSON.parse(r.data_json || '{}'), _sort: r.sort_order, _created: r.created_at, _col: col.id }));
   res.json({ code: 'OK', data: items });
 });
 publicRouter.get('/collections/:key/items/:id', (req, res) => { res.setHeader('Access-Control-Allow-Origin', '*');

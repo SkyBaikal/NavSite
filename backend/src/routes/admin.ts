@@ -920,7 +920,7 @@ function sanitizeFields(raw: any): any[] {
   return raw.slice(0, 32).map((f: any) => ({
     key: String(f.key || '').replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '').slice(0, 32),
     label: String(f.label || f.key || '').slice(0, 64),
-    type: ['text', 'textarea', 'number', 'url', 'date'].includes(f.type) ? f.type : 'text',
+    type: ['text', 'textarea', 'number', 'url', 'date', 'image'].includes(f.type) ? f.type : 'text',
     required: !!f.required,
   })).filter(f => f.key);
 }
@@ -968,10 +968,11 @@ adminRouter.post('/collections/:id/items', requireAdmin, (req, res) => {
     if (v === undefined || v === null) v = '';
     v = String(v);
     if (f.type === 'number') { const n = Number(v); v = isNaN(n) ? 0 : n; }
-    else if (f.type === 'url') { if (v && !/^https?:\/\//.test(v)) v = ''; }
+    else if (f.type === 'url' || f.type === 'image') { if (v && !/^(https?:\/\/|\/)/.test(v)) v = ''; }
     if (f.required && !String(v).trim()) return res.status(400).json({ code: 'BAD_REQUEST', message: `字段「${f.label || f.key}」必填` });
     data[f.key] = typeof v === 'number' ? v : String(v).slice(0, 20000);
   }
+  if (req.body?._draft) data._draft = 1;
   const so = Number(req.body?._sort || 0);
   const r = aCol.insItem.run(col.id, JSON.stringify(data), so);
   fireEvent(db, 'collection.item.create', { collection: col.name });
@@ -988,10 +989,11 @@ adminRouter.put('/collections/:id/items/:itemId', requireAdmin, (req, res) => {
     if (req.body?.[f.key] === undefined) continue;
     let v: any = String(req.body[f.key]);
     if (f.type === 'number') { const n = Number(v); v = isNaN(n) ? 0 : n; }
-    else if (f.type === 'url') { if (v && !/^https?:\/\//.test(v)) v = ''; }
+    else if (f.type === 'url' || f.type === 'image') { if (v && !/^(https?:\/\/|\/)/.test(v)) v = ''; }
     if (f.required && !String(v).trim()) return res.status(400).json({ code: 'BAD_REQUEST', message: `字段「${f.label || f.key}」必填` });
     data[f.key] = typeof v === 'number' ? v : v.slice(0, 20000);
   }
+  data._draft = req.body?._draft ? 1 : 0;
   const so = req.body?._sort !== undefined ? Number(req.body._sort) : null;
   aCol.updItem.run(JSON.stringify(data), so, it.id);
   res.json({ code: 'OK', data: { id: it.id, ...data } });
