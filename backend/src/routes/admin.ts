@@ -967,7 +967,7 @@ adminRouter.post('/collections/:id/items', requireAdmin, (req, res) => {
     let v = req.body?.[f.key];
     if (v === undefined || v === null) v = '';
     v = String(v);
-    if (f.type === 'number') { const n = Number(v); v = isNaN(n) ? 0 : n; }
+    if (f.type === 'number') { const t = String(v).trim(); if (t === '') { delete data[f.key]; continue; } const n = Number(t); v = isNaN(n) ? 0 : n; }
     else if (f.type === 'url' || f.type === 'image') { if (v && !/^(https?:\/\/|\/)/.test(v)) v = ''; }
     if (f.required && !String(v).trim()) return res.status(400).json({ code: 'BAD_REQUEST', message: `字段「${f.label || f.key}」必填` });
     data[f.key] = typeof v === 'number' ? v : String(v).slice(0, 20000);
@@ -988,7 +988,7 @@ adminRouter.put('/collections/:id/items/:itemId', requireAdmin, (req, res) => {
   for (const f of fields) {
     if (req.body?.[f.key] === undefined) continue;
     let v: any = String(req.body[f.key]);
-    if (f.type === 'number') { const n = Number(v); v = isNaN(n) ? 0 : n; }
+    if (f.type === 'number') { const t = String(v).trim(); if (t === '') { delete data[f.key]; continue; } const n = Number(t); v = isNaN(n) ? 0 : n; }
     else if (f.type === 'url' || f.type === 'image') { if (v && !/^(https?:\/\/|\/)/.test(v)) v = ''; }
     if (f.required && !String(v).trim()) return res.status(400).json({ code: 'BAD_REQUEST', message: `字段「${f.label || f.key}」必填` });
     data[f.key] = typeof v === 'number' ? v : v.slice(0, 20000);
