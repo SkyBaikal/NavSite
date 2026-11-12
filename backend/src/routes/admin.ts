@@ -578,7 +578,7 @@ adminRouter.put('/settings', requireAdmin, (req, res) => {
 
 
 // ---- 外观/文案自定义（后台 → 前台遥控）----
-const APPEARANCE_KEYS = ['custom_css', 'site_name', 'footer_text', 'search_placeholder', 'search_engines'];
+const APPEARANCE_KEYS = ['custom_css', 'site_name', 'footer_text', 'search_placeholder', 'search_engines', 'banner_shot'];
 adminRouter.get('/appearance', requireAdmin, (_req, res) => {
   const out = {};
   for (const k of APPEARANCE_KEYS) {

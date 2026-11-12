@@ -247,6 +247,29 @@ ${backLink ? '<a class="back" href="/">&#8592; 返回首页</a>' : ''}
 ${body}
 </main></body></html>`;
 }
+// 站点统计页（公开，纯只读数字，像个人名片）
+app.get('/stats', (_req, res) => {
+  const nLinks = (db.prepare('SELECT COUNT(*) n FROM links').get() as any).n;
+  const nCats = (db.prepare('SELECT COUNT(*) n FROM categories').get() as any).n;
+  const nPosts = (db.prepare("SELECT COUNT(*) n FROM collection_items ci JOIN collections c ON ci.collection_id=c.id WHERE EXISTS (SELECT 1 FROM json_each(ci.data_json) WHERE json_each.key='_draft' AND json_each.value=1)").get() as any).n;
+  const allItems = (db.prepare('SELECT COUNT(*) n FROM collection_items').get() as any).n;
+  const drafts = allItems - nPosts;
+  const nNotes = (db.prepare('SELECT COUNT(*) n FROM notes').get() as any).n;
+  const topLinks = db.prepare('SELECT title, url, clicks FROM links WHERE clicks > 0 ORDER BY clicks DESC LIMIT 5').all() as any[];
+  const boot = (db.prepare("SELECT value FROM settings WHERE key='boot_at'").get() as any)?.value;
+  let days = '—';
+  if (boot) days = String(Math.max(1, Math.floor((Date.now() - new Date(boot).getTime()) / 86400000)));
+  const first = (db.prepare('SELECT MIN(created_at) t FROM links').get() as any).t;
+  if (!boot && first) days = String(Math.max(1, Math.floor((Date.now() - new Date(first).getTime()) / 86400000)));
+  let body = `<h1>📊 站点统计</h1><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;max-width:640px">`;
+  const card = (k: string, v: any) => `<div style="padding:14px;border:1px solid rgba(128,150,190,.25);border-radius:12px;text-align:center"><div style="font-size:1.7em;font-weight:700">${v}</div><div style="opacity:.6;font-size:.8em">${k}</div></div>`;
+  body += card('🔗 书签', nLinks) + card('📁 分类', nCats) + card('📄 文章', nPosts) + card('📝 笔记', nNotes) + card('📅 运行天数', days) + '</div>';
+  if (topLinks.length) {
+    body += '<h2 style="margin-top:1.4em">🏆 点击榜</h2><ul class="arch">' + topLinks.map(l => `<li><a href="${l.url}" target="_blank" rel="noopener">${String(l.title).replace(/</g, '&lt;')}</a><time>${l.clicks} 次</time></li>`).join('') + '</ul>';
+  }
+  body += '<p style="opacity:.5;font-size:.85em;margin-top:1.5em">草稿 ' + drafts + ' 篇 · 由 NavSite 生成</p>';
+  res.send(pageShell('站点统计', body));
+});
 // 归档：/archive 与 /archive/:key
 app.get(['/archive', '/archive/:key'], (req, res) => {
   const key = (req.params as any).key;
@@ -260,10 +283,14 @@ app.get(['/archive', '/archive/:key'], (req, res) => {
     const items = allItems.filter((it: any) => { try { return !JSON.parse(it.data_json || '{}')._draft; } catch { return true; } });
     body += `<h2 style="margin-top:1.4em">${c.icon} ${c.name} <span style="font-size:.55em;opacity:.5">${items.length} 篇</span></h2>`;
     if (!items.length) { body += '<div class="empty">暂无内容</div>'; continue; }
+    let lastYM = '';
     body += '<ul class="arch">' + items.map((it: any) => {
       const d = JSON.parse(it.data_json || '{}');
       const t = String(d.title || d.name || '（无标题）').replace(/</g, '&lt;');
-      return `<li><a href="/c/${c.id}/${it.id}">${t}</a><time>${String(it.created_at).slice(0, 10)}</time></li>`;
+      const ym = String(it.created_at).slice(0, 7);
+      const head = ym !== lastYM ? `<li class="ym" style="list-style:none;opacity:.55;font-size:.85em;margin:.8em 0 .2em">🗓 ${ym}</li>` : '';
+      lastYM = ym;
+      return head + `<li><a href="/c/${c.id}/${it.id}">${t}</a><time>${String(it.created_at).slice(0, 10)}</time></li>`;
     }).join('') + '</ul>';
   }
   res.send(pageShell('归档', body));

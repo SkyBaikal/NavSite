@@ -773,6 +773,7 @@ async function loadAppearance() {
     try { eng = typeof JSON.parse(eng) === 'string' ? '' : JSON.stringify(JSON.parse(eng), null, 1); } catch { eng = ''; }
     $('apEngines').value = eng === '""' ? '' : eng;
     $('apCss').value = d.custom_css || '';
+    $('apBannerShot').checked = !!d.banner_shot;
   } catch (e) { $('apMsg').textContent = '加载失败: ' + e.message; }
 }
 async function saveAppearance() {

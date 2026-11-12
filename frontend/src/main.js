@@ -1363,6 +1363,7 @@ const CmdPalette = {
           const dt = (d.data) || {};
           (dt.links || []).slice(0, 6).forEach(l => cmds.push({ icon: '🔗', label: `${l.title}　${l.category || ''}`, act: () => window.open(l.url, '_blank') }));
           (dt.notes || []).slice(0, 4).forEach(n => cmds.push({ icon: '📝', label: `[${n.widget || '内容'}] ${String(n.text || '').slice(0, 40)}`, act: null }));
+          (dt.posts || []).slice(0, 5).forEach(pt => cmds.push({ icon: pt.icon || '📄', label: `${pt.title}　${pt.col}`, act: () => window.open(pt.url, '_blank') }));
         }).catch(() => {});
       }
             // 快捷别名直达：输入 gh → ⚡
@@ -1554,6 +1555,21 @@ mqPwa.addEventListener?.('change', applyPwa);
         appearance.value = d;
         window.__appearance = d;
         window.dispatchEvent(new Event('appearance-ready'));
+        // P3：每日一图全站 banner（appearance.bannerShot 开启时，暗遮罩保可读）
+        if (d.bannerShot) {
+          try {
+            const ds = await fetch('/api/dailyshot').then(r => r.json());
+            const url = ds?.data?.url;
+            if (url && !document.body.classList.contains('has-shot-banner')) {
+              document.body.classList.add('has-shot-banner');
+              const st = document.createElement('style');
+              st.textContent = `body.has-shot-banner::before{content:'';position:fixed;inset:0;background:url('${url}') center/cover no-repeat;z-index:-2;filter:saturate(1.05)}
+body.has-shot-banner::after{content:'';position:fixed;inset:0;background:linear-gradient(180deg,rgba(8,12,20,.55),rgba(8,12,20,.72));z-index:-1;pointer-events:none}
+body.has-shot-banner.light-theme::after{background:linear-gradient(180deg,rgba(246,247,250,.5),rgba(246,247,250,.75))}`;
+              document.head.appendChild(st);
+            }
+          } catch {}
+        }
       } catch {}
 
       // SSE：接收联动事件（切空间/主题/widget 开关/通知）
@@ -1681,7 +1697,7 @@ return { spaces, currentSpace, loadSpace, categories, loading, widgets, registry
       <div class="loading" v-else>加载中…</div>
       <button class="focus-btn" :class="{ on: focusMode }" @click="focusMode = !focusMode" :title="focusMode ? '退出专注模式' : '专注模式'">🎯</button>
       <a v-if="canWrite && !readonly" class="write-btn" href="/admin/" title="去后台写文章">✍️</a>
-      <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a> · <a href="/archive" target="_blank" class="foot-link">🗂 归档</a> · <a href="/feed.xml" target="_blank" class="foot-link">📡 RSS</a></footer>
+      <footer class="foot" v-if="!readonly">NavSite · 一切皆可配置 · <kbd>Ctrl+K</kbd> 命令面板 · <kbd>/</kbd> 搜索 · <kbd>1-9</kbd> 切空间 · <a href="javascript:void(0)" class="foot-link" @click="toggleSound">{{ soundOn ? '🔊 音效开' : '🔇 音效关' }}</a> · <a href="/archive" target="_blank" class="foot-link">🗂 归档</a> · <a href="/feed.xml" target="_blank" class="foot-link">📡 RSS</a> · <a href="/stats" target="_blank" class="foot-link">📊 统计</a></footer>
       <footer class="foot" v-else>👁 只读分享页 · 由 NavSite 生成</footer>
       <cmd-palette />
       <toast-tip />

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-12T12:45:48.445Z",
+  "total": 6,
+  "dead": [
+    {
+      "id": 10,
+      "title": "GitHub",
+      "url": "https://github.com",
+      "status": 0,
+      "ok": false
+    }
+  ]
+}

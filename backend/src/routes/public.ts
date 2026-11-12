@@ -90,6 +90,7 @@ publicRouter.get('/appearance', (_req, res) => {
     footerText: get('footer_text'),
     searchPlaceholder: get('search_placeholder'),
     searchEngines: engines,
+    bannerShot: get('banner_shot') === 'true',
   } });
 });
 
@@ -261,7 +262,19 @@ publicRouter.get('/search', (req, res) => {
       } catch {}
     }
   } catch {}
-  res.json({ code: 'OK', data: { links, notes: notes.slice(0, 6) } });
+  const posts: any[] = [];
+  try {
+    const rows = db.prepare(`SELECT ci.id, ci.collection_id, ci.data_json, c.name, c.icon FROM collection_items ci JOIN collections c ON ci.collection_id = c.id WHERE ci.data_json LIKE ? LIMIT 10`).all(like) as any[];
+    for (const r of rows) {
+      try {
+        const d = JSON.parse(r.data_json || '{}');
+        const hay = String(d.title || '') + ' ' + String(d.desc || '');
+        if (d._draft) continue;
+        if (hay.toLowerCase().includes(q.toLowerCase())) posts.push({ title: String(d.title || '（无标题）').slice(0, 60), col: r.name, icon: r.icon, url: '/c/' + r.collection_id + '/' + r.id });
+      } catch {}
+    }
+  } catch {}
+  res.json({ code: 'OK', data: { links, notes: notes.slice(0, 6), posts: posts.slice(0, 5) } });
 });
 
 // ---- 亮暗主题一键切换（写当前空间 theme_json 并 SSE 广播）----
