@@ -251,9 +251,10 @@ ${body}
 app.get('/stats', (_req, res) => {
   const nLinks = (db.prepare('SELECT COUNT(*) n FROM links').get() as any).n;
   const nCats = (db.prepare('SELECT COUNT(*) n FROM categories').get() as any).n;
-  const nPosts = (db.prepare("SELECT COUNT(*) n FROM collection_items ci JOIN collections c ON ci.collection_id=c.id WHERE EXISTS (SELECT 1 FROM json_each(ci.data_json) WHERE json_each.key='_draft' AND json_each.value=1)").get() as any).n;
   const allItems = (db.prepare('SELECT COUNT(*) n FROM collection_items').get() as any).n;
-  const drafts = allItems - nPosts;
+  const nDrafts = (db.prepare("SELECT COUNT(*) n FROM collection_items ci WHERE EXISTS (SELECT 1 FROM json_each(ci.data_json) WHERE json_each.key='_draft' AND json_each.value=1)").get() as any).n;
+  const nPosts = allItems - nDrafts;
+  const drafts = nDrafts;
   const nNotes = (db.prepare('SELECT COUNT(*) n FROM notes').get() as any).n;
   const topLinks = db.prepare('SELECT title, url, clicks FROM links WHERE clicks > 0 ORDER BY clicks DESC LIMIT 5').all() as any[];
   const boot = (db.prepare("SELECT value FROM settings WHERE key='boot_at'").get() as any)?.value;
